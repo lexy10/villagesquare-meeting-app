@@ -5,17 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Villagesquare Meet</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231560d8'/%3E%3Cstop offset='1' stop-color='%2300d4ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Ctext x='32' y='44' font-family='Verdana,Arial,sans-serif' font-size='30' font-weight='700' font-style='italic' text-anchor='middle' fill='%23fff'%3EVS%3C/text%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="https://meet.villagesquare.io/og.png">
+<link rel="apple-touch-icon" href="og.png">
 <meta name="description" content="Instant, secure video meetings by VillageSquare. Start a meeting and share one link — anyone can join with just their name.">
 <meta name="theme-color" content="#0a1424">
-<!-- Open Graph -->
+<!-- Open Graph (relative image resolves against the page URL on any domain) -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="VillageSquare Meet">
 <meta property="og:title" content="VillageSquare Meet">
 <meta property="og:description" content="Instant, secure video meetings. Start a meeting and share one link — anyone can join with just their name.">
-<meta property="og:url" content="https://meet.villagesquare.io/">
-<meta property="og:image" content="https://meet.villagesquare.io/og.png">
-<meta property="og:image:secure_url" content="https://meet.villagesquare.io/og.png">
+<meta property="og:image" content="og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -24,7 +22,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="VillageSquare Meet">
 <meta name="twitter:description" content="Instant, secure video meetings. Start a meeting and share one link — anyone can join with just their name.">
-<meta name="twitter:image" content="https://meet.villagesquare.io/og.png">
+<meta name="twitter:image" content="og.png">
 <meta name="twitter:image:alt" content="VillageSquare Meet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -143,6 +141,7 @@ input,textarea,select{font-family:inherit}
 .mt-top .sp{flex:1}
 .codechip{display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border:1px solid var(--navy-line);padding:7px 8px 7px 14px;border-radius:12px;font-size:13.5px;font-weight:600;color:#cfe0f7}
 .codechip .material-symbols-rounded{font-size:18px}
+.codechip #mtCode{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
 .codechip button{width:30px;height:30px;border-radius:8px;color:#9fb8db;display:flex;align-items:center;justify-content:center}
 .codechip button:hover{background:rgba(255,255,255,.08);color:#fff}
 
@@ -254,7 +253,49 @@ input,textarea,select{font-family:inherit}
 
 @media (max-width:920px){
   .lp-right{display:none}.lp-left h1{font-size:40px}.lp-body{padding:0 26px 30px}
-  .mt-panel{position:absolute;right:4px;top:4px;bottom:96px;z-index:25;width:calc(100% - 8px);max-width:352px;margin:0}
+  .mt-panel{position:absolute;right:4px;top:4px;bottom:82px;z-index:25;width:calc(100% - 8px);max-width:352px;margin:0}
+}
+
+/* ---------- phones ---------- */
+@media (max-width:600px){
+  /* meeting top bar */
+  .mt-top{height:52px;padding:0 12px;gap:8px}
+  .mt-top .title{font-size:14px}
+  .mt-top .mt-live{font-size:11px}
+  .codechip{font-size:11.5px;padding:5px 5px 5px 10px;gap:4px;border-radius:10px}
+  .codechip .material-symbols-rounded{font-size:16px}
+  .codechip #mtCode{max-width:88px}
+  .codechip button{width:26px;height:26px}
+
+  /* grid: fill the cells (no 16:9 letterboxing → no huge gaps) */
+  .mt-stage{padding:0 4px}
+  .mt-gridwrap{padding:6px 6px 84px}
+  .mt-grid{gap:8px}
+  .tile{aspect-ratio:auto;max-width:none;height:100%;border-radius:16px}
+  .tile .tav{width:64px;height:64px;font-size:26px}
+  .tile .tname{top:8px;right:8px;font-size:11px;padding:3px 8px;gap:5px}
+  .tile .thand{top:8px;left:8px;width:30px;height:30px;font-size:16px}
+
+  /* control dock → full-width bottom bar that always fits */
+  .mt-dock{left:8px;right:8px;bottom:10px;transform:none;width:auto;justify-content:space-between;gap:3px;padding:7px 8px;border-radius:18px}
+  .dbtn{width:40px;height:40px;border-radius:12px}
+  .dbtn .material-symbols-rounded{font-size:21px}
+  .dbtn.leave{width:40px}
+  .dbtn .cnt{top:2px;right:2px;min-width:15px;height:15px;font-size:9px}
+  .dock-sep{display:none}
+  #reactBar{bottom:64px;padding:8px 10px}
+  #reactBar button{width:40px;height:40px;font-size:23px}
+  #leaveMenu{bottom:64px;min-width:0;left:8px;right:8px;transform:none}
+
+  /* pre-join: taller preview so controls clear the avatar */
+  .pj-top{padding:0 14px;height:60px}
+  .pj-body{gap:20px;padding:0 18px 26px}
+  .pj-preview{max-width:340px;aspect-ratio:4/5}
+  .pj-off .av{width:76px;height:76px;font-size:30px}
+  .pj-ctrls{bottom:14px;gap:14px}
+  .pj-cbtn{width:48px;height:48px}
+  .pj-cbtn .material-symbols-rounded{font-size:22px}
+  .pj-right h2{font-size:26px}
 }
 </style>
 </head>
