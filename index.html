@@ -572,13 +572,34 @@ async function guestJoin(){
   }
 }
 
+// ---------- notification chimes (synthesized, no assets) ----------
+let _actx=null;
+function chime(kind){
+  try{
+    _actx=_actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(_actx.state==='suspended')_actx.resume();
+    // join = gentle ascending two-note; leave = softer descending two-note.
+    const notes = kind==='join' ? [[587.33,0],[880,0.12]] : [[659.25,0],[440,0.13]];
+    const master=_actx.createGain(); master.gain.value=kind==='join'?0.18:0.14; master.connect(_actx.destination);
+    notes.forEach(([freq,at])=>{
+      const t=_actx.currentTime+at;
+      const osc=_actx.createOscillator(); osc.type='sine'; osc.frequency.value=freq;
+      const g=_actx.createGain();
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(1,t+0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+      osc.connect(g); g.connect(master); osc.start(t); osc.stop(t+0.24);
+    });
+  }catch{}
+}
+
 // ---------- connect (shared) ----------
 async function connectRoom(token, displayName, title){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
   ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
-  room.on(LK.RoomEvent.ParticipantConnected,p=>toast((p.name||p.identity)+' joined'));
-  room.on(LK.RoomEvent.ParticipantDisconnected,p=>{handsUp.delete(p.identity);speaking.delete(p.identity);toast((p.name||p.identity)+' left');});
+  room.on(LK.RoomEvent.ParticipantConnected,p=>{chime('join');toast((p.name||p.identity)+' joined');});
+  room.on(LK.RoomEvent.ParticipantDisconnected,p=>{chime('leave');handsUp.delete(p.identity);speaking.delete(p.identity);toast((p.name||p.identity)+' left');});
   room.on(LK.RoomEvent.ActiveSpeakersChanged,s=>{speaking.clear();s.forEach(p=>speaking.add(p.identity));updateSpeaking();});
   room.on(LK.RoomEvent.Disconnected,()=>cleanup());
   room.on(LK.RoomEvent.DataReceived,(payload,p)=>{ try{ handleData(JSON.parse(new TextDecoder().decode(payload)),p);}catch{} });
