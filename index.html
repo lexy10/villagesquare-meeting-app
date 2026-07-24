@@ -193,6 +193,18 @@ input,textarea,select{font-family:inherit}
 #reactBar.open{display:flex}
 #reactBar button{font-size:26px;width:46px;height:46px;border-radius:14px;transition:transform .1s,background .1s}
 #reactBar button:hover{background:rgba(255,255,255,.1);transform:scale(1.18)}
+/* leave menu */
+#leaveMenu{position:absolute;bottom:84px;left:50%;transform:translateX(-50%);background:rgba(10,20,38,.94);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:18px;padding:8px;display:none;flex-direction:column;gap:4px;box-shadow:0 16px 40px rgba(0,0,0,.45);z-index:31;min-width:280px}
+#leaveMenu.open{display:flex}
+#leaveMenu button{display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:12px;text-align:left;color:#eaf1ff;transition:background .12s}
+#leaveMenu button:hover{background:rgba(255,255,255,.07)}
+#leaveMenu button .material-symbols-rounded{font-size:22px;color:#9fb8db}
+#leaveMenu button.danger .material-symbols-rounded{color:#ff6b7a}
+#leaveMenu button.danger:hover{background:rgba(234,75,90,.14)}
+#leaveMenu .lm-txt{display:flex;flex-direction:column}
+#leaveMenu .lm-txt b{font-size:14px;font-weight:700}
+#leaveMenu button.danger .lm-txt b{color:#ff8593}
+#leaveMenu .lm-txt span{font-size:11.5px;color:#7f97bd;font-weight:500}
 .floatemoji{position:absolute;bottom:80px;font-size:40px;z-index:40;pointer-events:none;animation:fly 3.2s ease-out forwards}
 @keyframes fly{0%{opacity:0;transform:translateY(0) scale(.4)}12%{opacity:1;transform:translateY(-24px) scale(1)}100%{opacity:0;transform:translateY(-320px) scale(1.15)}}
 
@@ -391,6 +403,11 @@ input,textarea,select{font-family:inherit}
     <button onclick="react('🔥')">🔥</button><button onclick="react('🙌')">🙌</button>
   </div>
 
+  <div id="leaveMenu">
+    <button onclick="leaveMeeting()"><span class="material-symbols-rounded">logout</span><div class="lm-txt"><b>Leave meeting</b><span>Others stay in the room</span></div></button>
+    <button class="danger" id="lmEnd" onclick="endMeeting()"><span class="material-symbols-rounded">call_end</span><div class="lm-txt"><b>End for everyone</b><span>Takes the room offline for all</span></div></button>
+  </div>
+
   <div class="mt-dock">
     <button class="dbtn" id="dMic" onclick="toggleMic()" title="Microphone"><span class="material-symbols-rounded">mic</span></button>
     <button class="dbtn" id="dCam" onclick="toggleCam()" title="Camera"><span class="material-symbols-rounded">videocam</span></button>
@@ -401,7 +418,7 @@ input,textarea,select{font-family:inherit}
     <button class="dbtn rel" id="dPeople" onclick="openPanel('people')" title="People"><span class="material-symbols-rounded">group</span><span class="cnt" id="peopleCnt">1</span></button>
     <button class="dbtn rel" id="dChat" onclick="openPanel('chat')" title="Chat"><span class="material-symbols-rounded">chat</span><span class="cnt red" id="chatCnt" style="display:none">0</span></button>
     <div class="dock-sep"></div>
-    <button class="dbtn leave" onclick="leaveMeeting()" title="Leave"><span class="material-symbols-rounded">call_end</span></button>
+    <button class="dbtn leave" onclick="onLeaveClick(event)" title="Leave"><span class="material-symbols-rounded">call_end</span></button>
   </div>
 </div>
 
@@ -496,7 +513,7 @@ async function startMeeting(){
   const err=document.getElementById('startErr'); err.classList.remove('show');
   const btn=document.getElementById('btnStart'); btn.disabled=true; btn.innerHTML='<span class="material-symbols-rounded">progress_activity</span> Starting…';
   try{
-    const fd=new FormData(); fd.append('title',title); fd.append('category_id','1'); fd.append('privacy','everyone');
+    const fd=new FormData(); fd.append('title',title); fd.append('category_id','38'); fd.append('privacy','everyone');
     const d=await apiFetch('/livestreams/start',{method:'POST',multipart:true,body:fd});
     roomId = d.room_id; livekitUrl = d.livekit_url; livestreamUuid = d.uuid; myRole='host';
     const hostToken = d.token;
@@ -660,9 +677,28 @@ function renderChat(){ const box=document.getElementById('chatMsgs'); if(!chatLo
 function copyLink(){ navigator.clipboard?.writeText(shareUrl).then(()=>toast('Invite link copied')).catch(()=>toast('Code: '+roomId)); }
 function copyShare(){ const i=document.getElementById('shareLink'); i.select(); navigator.clipboard?.writeText(i.value).then(()=>toast('Link copied — share it!')).catch(()=>{}); }
 function closeShare(){ document.getElementById('shareModal').classList.remove('open'); }
-function leaveMeeting(){ if(room)room.disconnect(); }
-function cleanup(){ room=null; sharing=false; handRaised=false; handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
-  document.getElementById('grid').innerHTML=''; closePanel(); document.getElementById('shareModal').classList.remove('open');
+function onLeaveClick(e){
+  e.stopPropagation();
+  // Host gets a choice (leave vs end for everyone); guests just leave.
+  if(myRole==='host' && livestreamUuid){ document.getElementById('leaveMenu').classList.toggle('open'); }
+  else { leaveMeeting(); }
+}
+function closeLeaveMenu(){ document.getElementById('leaveMenu').classList.remove('open'); }
+function leaveMeeting(){ closeLeaveMenu(); if(room)room.disconnect(); }
+async function endMeeting(){
+  closeLeaveMenu();
+  const btn=document.getElementById('lmEnd');
+  try{
+    await apiFetch('/livestreams/'+encodeURIComponent(livestreamUuid)+'/end-livestream');
+    toast('Meeting ended for everyone');
+    if(room)room.disconnect();
+  }catch(e){
+    // Leave the host in the room so they can retry; the room is still live.
+    toast('Could not end meeting: '+e.message,4500);
+  }
+}
+function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
+  document.getElementById('grid').innerHTML=''; closePanel(); closeLeaveMenu(); document.getElementById('shareModal').classList.remove('open');
   ['btnGuestJoin','btnStart'].forEach(id=>{const b=document.getElementById(id); if(b)b.disabled=false;});
   document.getElementById('btnGuestJoin').innerHTML='<span class="material-symbols-rounded">login</span> Join now';
   document.getElementById('btnStart').innerHTML='<span class="material-symbols-rounded">rocket_launch</span> Start meeting';
@@ -671,6 +707,7 @@ function cleanup(){ room=null; sharing=false; handRaised=false; handsUp.clear();
 
 // ---------- deep link ?room= ----------
 (function(){ const r=new URLSearchParams(location.search).get('room'); if(r){ checkAndProceed(r); } })();
+document.addEventListener('click',e=>{ const m=document.getElementById('leaveMenu'); if(m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.dbtn.leave')) closeLeaveMenu(); });
 window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); stopPreview(); });
 </script>
 </body>
