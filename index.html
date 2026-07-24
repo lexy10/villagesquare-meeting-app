@@ -125,16 +125,16 @@ input,textarea,select{font-family:inherit}
 .codechip button:hover{background:rgba(255,255,255,.08);color:#fff}
 
 .mt-stage{flex:1;display:flex;min-height:0;position:relative;padding:0 8px}
-.mt-gridwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px 12px;min-width:0}
+.mt-gridwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px 100px;min-width:0}
 .mt-grid{display:grid;gap:12px;width:100%;height:100%;align-content:center;justify-items:center}
-.tile{position:relative;width:100%;height:100%;background:linear-gradient(150deg,var(--navy3),var(--navy2));border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.tile{position:relative;width:100%;height:auto;max-width:min(100%,860px);aspect-ratio:16/9;max-height:100%;background:linear-gradient(150deg,var(--navy3),var(--navy2));border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 .tile::after{content:'';position:absolute;inset:0;border-radius:20px;border:2.5px solid transparent;pointer-events:none;transition:border-color .15s}
 .tile.speaking::after{border-color:var(--cyan);box-shadow:inset 0 0 24px rgba(0,212,255,.18)}
 .tile video{width:100%;height:100%;object-fit:cover}
 .tile.local video{transform:scaleX(-1)}
 .tile.screen video{object-fit:contain;background:#000}
 .tile .tav{width:92px;height:92px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:36px;color:#fff;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.3)}
-.tile .tname{position:absolute;bottom:12px;left:12px;display:flex;align-items:center;gap:7px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);padding:5px 11px;border-radius:11px;font-size:13px;font-weight:600;max-width:calc(100% - 24px)}
+.tile .tname{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:7px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);padding:5px 11px;border-radius:11px;font-size:13px;font-weight:600;max-width:calc(100% - 24px)}
 .tile .tname .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile .tname .material-symbols-rounded{font-size:16px;color:#ff6b7a}
 .tile .badge-you{background:var(--grad);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:6px;letter-spacing:.4px}
@@ -479,13 +479,16 @@ function normalizeRoom(v){ try{ if(v.startsWith('http')){ const u=new URL(v); re
 let pendingTitle='';
 async function checkAndProceed(rawRoom){
   const roomIn=(rawRoom||'').trim(); if(!roomIn)return;
-  pendingRoom=roomIn;
+  pendingRoom=roomIn; pendingTitle='';
   const btn=document.getElementById('btnJoin'); const orig=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
   try{
     const d=await apiFetch('/livestreams/'+encodeURIComponent(roomIn)+'/meeting-status',{method:'POST',auth:false});
-    if(d && d.live){ pendingRoom=d.room_id||roomIn; pendingTitle=d.title||''; openPrejoin(); }
-    else { showNotLive(roomIn); }
-  }catch(e){ showNotLive(roomIn); }
+    // Fail-open: only block on a DEFINITIVE not-live. If the check is unavailable
+    // or returns something unexpected, proceed and let the real join decide —
+    // guest-token is the source of truth and shows "not live" if it truly isn't.
+    if(d && d.live===false){ showNotLive(roomIn); }
+    else { if(d && d.room_id) pendingRoom=d.room_id; if(d && d.title) pendingTitle=d.title; openPrejoin(); }
+  }catch(e){ console.warn('meeting-status check unavailable, proceeding to join:', e.message); openPrejoin(); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig||'Join'; } }
 }
 function showNotLive(room){ document.getElementById('nlRoom').textContent=room; show('notlive'); }
