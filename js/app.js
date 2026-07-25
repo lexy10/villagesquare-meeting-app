@@ -324,10 +324,29 @@ const REACTION_SOUNDS={
   '\u{1F64C}':(ac,o)=>{ [659,880,1319].forEach((f,i)=>_tone(ac,o,{freq:f,at:i*.07,dur:.28,type:'triangle',peak:.75})); },         // uplifting triad
 };
 
+// Recorded cues for the reactions where a synth can't convince: applause and a
+// human laugh. Public-domain sources, trimmed and loudness-matched to the
+// synthesized cues (see sounds/CREDITS.txt). Everything else stays synthesized.
+const REACTION_SAMPLES={'\u{1F44F}':'sounds/clap.mp3','\u{1F602}':'sounds/laugh.mp3'};
+const _sampleBufs={};
+function _loadSample(ac,url){
+  if(!_sampleBufs[url]){
+    _sampleBufs[url]=fetch(url)
+      .then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(b=>ac.decodeAudioData(b));
+  }
+  return _sampleBufs[url];
+}
+// Fetch+decode once so the first reaction isn't late; safe to call repeatedly.
+function warmReactionSamples(){
+  try{ const ac=_ac(); Object.values(REACTION_SAMPLES).forEach(u=>_loadSample(ac,u).catch(()=>{})); }catch{}
+}
+
 // A burst of reactions shouldn't turn into noise soup.
 let _sndTimes=[];
 function reactionSound(emoji){
-  const make=REACTION_SOUNDS[emoji]; if(!make)return;
+  const url=REACTION_SAMPLES[emoji], make=REACTION_SOUNDS[emoji];
+  if(!url&&!make)return;
   const now=Date.now();
   _sndTimes=_sndTimes.filter(t=>now-t<1000);
   if(_sndTimes.length>=4)return;
@@ -335,7 +354,15 @@ function reactionSound(emoji){
   try{
     const ac=_ac();
     const master=ac.createGain(); master.gain.value=.16; master.connect(ac.destination);
-    make(ac,master);
+    if(url){
+      _loadSample(ac,url).then(buf=>{
+        const src=ac.createBufferSource(); src.buffer=buf; src.connect(master); src.start();
+      }).catch(e=>{
+        // Fall back to the synthesized cue if the file can't be fetched/decoded.
+        console.warn('reaction sample failed, using synth',url,e);
+        if(make) make(ac,master);
+      });
+    }else make(ac,master);
   }catch{}
 }
 
@@ -392,7 +419,7 @@ async function connectRoom(token, displayName, title, seedStream){
   await publishLocalMedia(seedStream);
   document.getElementById('mtTitle').textContent=title||'Meeting';
   document.getElementById('mtCode').textContent=roomId;
-  show('meeting'); renderGrid(); renderPeople(); updateDock();
+  show('meeting'); renderGrid(); renderPeople(); updateDock(); warmReactionSamples();
   toast('You joined the meeting');
 }
 

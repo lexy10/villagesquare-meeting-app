@@ -1,0 +1,13 @@
+Reaction sounds
+===============
+clap.mp3  — trimmed from "Clapping hurray (cropped).oga"
+            Wikimedia Commons · Public domain
+            https://commons.wikimedia.org/wiki/File:Clapping_hurray_(cropped).oga
+
+laugh.mp3 — trimmed from "Laughter and clearing voice.ogg"
+            Wikimedia Commons · Public domain
+            https://commons.wikimedia.org/wiki/File:Laughter_and_clearing_voice.ogg
+
+Both sources are public domain. Clips were trimmed, faded and loudness-
+normalised (-18 LUFS) for use as short in-call reaction cues.
+All other reaction sounds are synthesized at runtime (see js/app.js).
