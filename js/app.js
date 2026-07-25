@@ -414,24 +414,40 @@ function reactionSound(emoji){
 // means later dock toggles only mute/unmute an existing publication, so they
 // never hit getUserMedia (and never hit that iOS restriction) at all.
 async function publishLocalMedia(seed){
-  const at=seed&&seed.getAudioTracks&&seed.getAudioTracks()[0];
-  const vt=seed&&seed.getVideoTracks&&seed.getVideoTracks()[0];
-  if(at||vt){
-    try{
-      if(at) await room.localParticipant.publishTrack(at,{source:LK.Track.Source.Microphone});
-      if(vt) await room.localParticipant.publishTrack(vt,{source:LK.Track.Source.Camera});
-      // Publish first, then apply the user's pre-join choices as mute state, so
-      // a guest who joined muted can still unmute later without a new capture.
-      await room.localParticipant.setMicrophoneEnabled(micOn).catch(()=>{});
-      await room.localParticipant.setCameraEnabled(camOn).catch(()=>{});
-      return;
-    }catch(e){
-      console.warn('reusing pre-join tracks failed, capturing fresh',e);
-      try{ seed.getTracks().forEach(t=>t.stop()); }catch{}
+  // Snapshot the choice made in the preview. Publishing fires LocalTrackPublished,
+  // and syncLocalMediaState() reacts to it by reading the publication's mute
+  // state — which is "unmuted" for a freshly published track — overwriting
+  // micOn/camOn before we get to apply them. Reading the globals after that
+  // point would silently start every meeting with mic and camera on.
+  const wantMic=micOn, wantCam=camOn;
+  _applyingLocalMedia=true;
+  try{
+    const at=seed&&seed.getAudioTracks&&seed.getAudioTracks()[0];
+    const vt=seed&&seed.getVideoTracks&&seed.getVideoTracks()[0];
+    if(at||vt){
+      try{
+        // The preview muted by flipping MediaStreamTrack.enabled, which LiveKit
+        // cannot see. Hand over live tracks and let LiveKit's own mute state be
+        // the single source of truth, so remote tiles show the right mic icon.
+        if(at) at.enabled=true;
+        if(vt) vt.enabled=true;
+        if(at) await room.localParticipant.publishTrack(at,{source:LK.Track.Source.Microphone});
+        if(vt) await room.localParticipant.publishTrack(vt,{source:LK.Track.Source.Camera});
+        await room.localParticipant.setMicrophoneEnabled(wantMic).catch(()=>{});
+        await room.localParticipant.setCameraEnabled(wantCam).catch(()=>{});
+        return;
+      }catch(e){
+        console.warn('reusing pre-join tracks failed, capturing fresh',e);
+        try{ seed.getTracks().forEach(t=>t.stop()); }catch{}
+      }
     }
+    await room.localParticipant.setCameraEnabled(wantCam).catch(()=>{});
+    await room.localParticipant.setMicrophoneEnabled(wantMic).catch(()=>{});
+  }finally{
+    micOn=wantMic; camOn=wantCam;
+    _applyingLocalMedia=false;
+    updateDock();
   }
-  await room.localParticipant.setCameraEnabled(camOn).catch(()=>{});
-  await room.localParticipant.setMicrophoneEnabled(micOn).catch(()=>{});
 }
 
 async function connectRoom(token, displayName, title, seedStream){
@@ -773,8 +789,9 @@ async function toggleCam(){
 // host-side force-mute changed the real track but not our local flag, so the
 // button still read "on" and the next tap muted an already-muted mic — the user
 // had to press twice to get sound back.
+let _applyingLocalMedia=false;
 async function syncLocalMediaState(){
-  if(!room||!room.localParticipant)return;
+  if(!room||!room.localParticipant||_applyingLocalMedia)return;
   const lp=room.localParticipant;
   const mic=lp.getTrackPublication(LK.Track.Source.Microphone);
   const cam=lp.getTrackPublication(LK.Track.Source.Camera);
