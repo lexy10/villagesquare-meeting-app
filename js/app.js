@@ -9,6 +9,7 @@ let accessToken='';               // host bearer (from login)
 let room=null, myRole='guest', roomId='', livekitUrl='', shareUrl='', livestreamUuid='';
 let camOn=true, micOn=true, sharing=false, handRaised=false;
 let curPanel=null, unread=0;
+let pinned='';            // identity spotlighted for everyone ('' = none)
 const chatLog=[]; const handsUp=new Set(); const speaking=new Set();
 let pjStream=null, pjCamOn=true, pjMicOn=true, pendingRoom='';
 let pendingRejoin=false;   // set when sign-in was triggered from the rejoin banner
@@ -260,8 +261,14 @@ async function connectRoom(token, displayName, title, seedStream){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
   ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
-  room.on(LK.RoomEvent.ParticipantConnected,p=>{chime('join');toast((p.name||p.identity)+' joined');});
-  room.on(LK.RoomEvent.ParticipantDisconnected,p=>{chime('leave');handsUp.delete(p.identity);speaking.delete(p.identity);toast((p.name||p.identity)+' left');});
+  room.on(LK.RoomEvent.ParticipantConnected,p=>{chime('join');toast((p.name||p.identity)+' joined');
+    // Someone who arrives after a pin was set would otherwise see no spotlight.
+    if(myRole==='host'&&pinned) setTimeout(()=>publish({t:'pin',identity:pinned}),600);});
+  room.on(LK.RoomEvent.ParticipantDisconnected,p=>{chime('leave');handsUp.delete(p.identity);speaking.delete(p.identity);
+    // Drop the spotlight if the pinned person is the one who left.
+    if(pinned===p.identity){ pinned=''; if(myRole==='host') publish({t:'pin',identity:''}); }
+    if(tileMenuFor===p.identity) closeTileMenu();
+    toast((p.name||p.identity)+' left');});
   room.on(LK.RoomEvent.ActiveSpeakersChanged,s=>{speaking.clear();s.forEach(p=>speaking.add(p.identity));updateSpeaking();});
   room.on(LK.RoomEvent.Disconnected,()=>cleanup());
   room.on(LK.RoomEvent.DataReceived,(payload,p)=>{ try{ handleData(JSON.parse(new TextDecoder().decode(payload)),p);}catch{} });
@@ -276,6 +283,7 @@ async function connectRoom(token, displayName, title, seedStream){
 function handleData(d,p){ const who=p?(p.name||p.identity):'Someone';
   if(d.t==='chat') addChat(d.name||who,d.text);
   else if(d.t==='reaction') floatEmoji(d.emoji);
+  else if(d.t==='pin'){ pinned=d.identity||''; renderGrid(); }
   else if(d.t==='hand'){ if(d.raised)handsUp.add(p?.identity); else handsUp.delete(p?.identity); renderGrid(); renderPeople(); if(d.raised)toast((d.name||who)+' raised their hand ✋'); }
 }
 
@@ -292,24 +300,43 @@ function cols(n){
 function renderGrid(){
   if(!room)return; const grid=document.getElementById('grid');
   grid.querySelectorAll('video,audio').forEach(el=>{try{el.srcObject=null;}catch{}el.remove();}); grid.innerHTML='';
-  const ps=parts(), n=ps.length, c=cols(n), r=Math.ceil(n/c);
+  const ps=parts();
   const phone=isPhonePortrait();
-  grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
-  if(phone){
-    // Phones keep each tile at a readable shape (set in CSS) and let the strip
-    // scroll instead of squashing everyone into slivers to fit one screenful.
-    grid.style.gridTemplateRows=`repeat(${r},auto)`;
-    grid.style.height='auto'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
+  // A pinned participant is hoisted to the front and given a full-width row;
+  // everyone else shares a smaller strip beneath it.
+  const pinIdx = pinned ? ps.findIndex(p=>p.identity===pinned) : -1;
+  const hasPin = pinIdx>=0;
+  if(hasPin) ps.unshift(ps.splice(pinIdx,1)[0]);
+  const n=ps.length;
+  let c;
+  grid.classList.toggle('pinned',hasPin);
+  if(hasPin){
+    const others=n-1;
+    c=Math.max(1,Math.min(others,phone?3:6));
+    grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
+    grid.style.gridTemplateRows=others>0?'minmax(0,3fr) minmax(0,1fr)':'1fr';
+    grid.style.height='100%'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
   }else{
-    grid.style.gridTemplateRows=`repeat(${r},1fr)`;
-    grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
+    c=cols(n); const r=Math.ceil(n/c);
+    grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
+    if(phone){
+      // Phones keep each tile at a readable shape (set in CSS) and let the strip
+      // scroll instead of squashing everyone into slivers to fit one screenful.
+      grid.style.gridTemplateRows=`repeat(${r},auto)`;
+      grid.style.height='auto'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
+    }else{
+      grid.style.gridTemplateRows=`repeat(${r},1fr)`;
+      grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
+    }
   }
   ps.forEach((p,i)=>{
     const local=p===room.localParticipant;
-    const tile=document.createElement('div'); tile.className='tile'+(local?' local':'')+(speaking.has(p.identity)?' speaking':''); tile.dataset.id=p.identity;
+    const isPinned=hasPin&&i===0;
+    const tile=document.createElement('div'); tile.className='tile'+(local?' local':'')+(speaking.has(p.identity)?' speaking':'')+(isPinned?' pin':''); tile.dataset.id=p.identity;
+    if(isPinned) tile.style.gridColumn='1 / -1';
     // Odd-count top tile spans the full row — but not when stacking (c===1),
     // where every tile already spans the only column.
-    if(n===3&&i===0&&c>1)tile.style.gridColumn='1 / -1';
+    else if(!hasPin&&n===3&&i===0&&c>1)tile.style.gridColumn='1 / -1';
     const scr=p.getTrackPublication(LK.Track.Source.ScreenShare), cam=p.getTrackPublication(LK.Track.Source.Camera);
     let vt=null,isScr=false;
     if(scr&&scr.track&&!scr.isMuted){vt=scr.track;isScr=true;} else if(cam&&cam.track&&!cam.isMuted){vt=cam.track;}
@@ -321,11 +348,68 @@ function renderGrid(){
     label.innerHTML=(muted?'<span class="material-symbols-rounded">mic_off</span>':'')+`<span class="nm">${esc(p.name||p.identity)}</span>`+(local?'<span class="badge-you">YOU</span>':'');
     tile.appendChild(label);
     if(!local&&mic&&mic.track&&!mic.isMuted){const au=mic.track.attach();au.style.display='none';tile.appendChild(au);}
+    if(isPinned){ const pb=document.createElement('div'); pb.className='tpin'; pb.innerHTML='<span class="material-symbols-rounded">push_pin</span>'; tile.appendChild(pb); }
+    // Moderation is host-only; guests get no menu button at all.
+    if(myRole==='host'){
+      const mb=document.createElement('button'); mb.className='tmore'; mb.title='Participant options';
+      mb.innerHTML='<span class="material-symbols-rounded">more_vert</span>';
+      mb.onclick=(ev)=>{ ev.stopPropagation(); openTileMenu(p.identity, p.name||p.identity, local, ev.currentTarget); };
+      tile.appendChild(mb);
+    }
     grid.appendChild(tile);
   });
   document.getElementById('peopleCnt').textContent=n;
 }
 function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('speaking',speaking.has(t.dataset.id))); }
+
+// ---------- host moderation ----------
+// Pinning is a shared "spotlight": the host's choice is broadcast so every
+// client renders the same layout, rather than being a private view preference.
+function setPin(identity){
+  pinned = (pinned===identity) ? '' : identity;
+  publish({t:'pin', identity:pinned});
+  renderGrid();
+  toast(pinned?'Pinned for everyone':'Unpinned');
+}
+
+// Mute / stop-video / remove go through the API so LiveKit enforces them
+// server-side; a client that ignores the request still gets muted or removed.
+async function moderate(identity, action, label){
+  try{
+    await apiFetch('/livestreams/'+encodeURIComponent(roomId)+'/moderate',{method:'POST',body:{identity,action}});
+    toast(label);
+  }catch(e){ toast('Could not '+action.replace('_',' ')+': '+e.message,4000); }
+}
+
+let tileMenuFor='';
+function openTileMenu(identity,name,isLocal,anchor){
+  const m=document.getElementById('tileMenu'); if(!m)return;
+  if(tileMenuFor===identity && m.classList.contains('open')){ closeTileMenu(); return; }
+  tileMenuFor=identity;
+  const p=parts().find(x=>x.identity===identity);
+  const mic=p&&p.getTrackPublication(LK.Track.Source.Microphone);
+  const cam=p&&p.getTrackPublication(LK.Track.Source.Camera);
+  const micMuted=!mic||!mic.track||mic.isMuted;
+  const camOff=!cam||!cam.track||cam.isMuted;
+  const isPinned=pinned===identity;
+  // The host can spotlight themselves, but muting or removing yourself from the
+  // dock is what the dock is for — so those are hidden on your own tile.
+  const rows=[
+    `<button onclick="setPin('${identity}');closeTileMenu()"><span class="material-symbols-rounded">${isPinned?'push_pin':'push_pin'}</span>${isPinned?'Unpin':'Pin for everyone'}</button>`,
+  ];
+  if(!isLocal){
+    rows.push(`<button onclick="moderate('${identity}','${micMuted?'unmute':'mute'}','${micMuted?'Asked to unmute':'Muted'} ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">${micMuted?'mic':'mic_off'}</span>${micMuted?'Unmute':'Mute'}</button>`);
+    rows.push(`<button onclick="moderate('${identity}','${camOff?'start_video':'stop_video'}','${camOff?'Asked to start video':'Stopped video for'} ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">${camOff?'videocam':'videocam_off'}</span>${camOff?'Start video':'Stop video'}</button>`);
+    rows.push(`<button class="danger" onclick="moderate('${identity}','remove','Removed ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">person_remove</span>Remove from meeting</button>`);
+  }
+  m.innerHTML=`<div class="tm-head">${esc(name)}</div>`+rows.join('');
+  m.classList.add('open');
+  // Anchor to the button, then nudge back inside the viewport.
+  const r=anchor.getBoundingClientRect();
+  m.style.top=(r.bottom+6)+'px';
+  m.style.left=Math.max(8,Math.min(r.right-220, window.innerWidth-232))+'px';
+}
+function closeTileMenu(){ const m=document.getElementById('tileMenu'); if(m){ m.classList.remove('open'); } tileMenuFor=''; }
 
 // ---------- dock controls ----------
 // Mic/cam toggles hit getUserMedia when switching ON, which can reject (denied
@@ -442,7 +526,7 @@ async function endMeeting(){
     toast('Could not end meeting: '+e.message,4500);
   }
 }
-function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
+function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; pinned=''; closeTileMenu(); handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
   document.getElementById('grid').innerHTML=''; closePanel(); closeLeaveMenu(); document.getElementById('shareModal').classList.remove('open');
   ['btnGuestJoin','btnStart'].forEach(id=>{const b=document.getElementById(id); if(b)b.disabled=false;});
   document.getElementById('btnGuestJoin').innerHTML='<span class="material-symbols-rounded">login</span> Join now';
@@ -457,7 +541,9 @@ function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid='
   // No deep link — surface a meeting this browser started and never ended.
   refreshRejoinCard();
 })();
-document.addEventListener('click',e=>{ const m=document.getElementById('leaveMenu'); if(m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.dbtn.leave')) closeLeaveMenu(); });
+document.addEventListener('click',e=>{ const tm=document.getElementById('tileMenu');
+  if(tm&&tm.classList.contains('open')&&!tm.contains(e.target)&&!e.target.closest('.tmore')) closeTileMenu();
+  const m=document.getElementById('leaveMenu'); if(m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.dbtn.leave')) closeLeaveMenu(); });
 window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); stopPreview(); });
 // The grid's column count depends on viewport/orientation, so re-lay it out on
 // rotate or resize. Debounced because iOS fires resize repeatedly mid-rotation.

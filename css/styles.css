@@ -143,6 +143,25 @@ input,textarea,select{font-family:inherit}
 .tile .tname .material-symbols-rounded{font-size:16px;color:#ff6b7a}
 .tile .badge-you{background:var(--grad);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:6px;letter-spacing:.4px}
 .tile .thand{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:11px;background:#ffce3a;display:none;align-items:center;justify-content:center;font-size:18px;box-shadow:0 6px 14px rgba(0,0,0,.3)}
+/* spotlight marker + host's per-tile menu button */
+.tile.pin{box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.tile.pin::after{border-color:rgba(0,212,255,.55)}
+.tile .tpin{position:absolute;top:12px;left:12px;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(0,212,255,.9);color:#04263a}
+.tile .tpin .material-symbols-rounded{font-size:17px}
+.tile .thand.show ~ .tpin{left:50px}
+.tile .tmore{position:absolute;bottom:10px;right:10px;width:34px;height:34px;border-radius:11px;background:rgba(6,14,28,.62);backdrop-filter:blur(8px);color:#eaf1ff;display:flex;align-items:center;justify-content:center;opacity:.85;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.tile .tmore .material-symbols-rounded{font-size:20px}
+@media (hover:hover){.tile .tmore:hover{background:rgba(6,14,28,.85);opacity:1}}
+
+/* participant options menu (host) */
+#tileMenu{position:fixed;z-index:60;min-width:224px;max-width:280px;background:rgba(10,20,38,.96);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:14px;padding:6px;display:none;flex-direction:column;gap:2px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+#tileMenu.open{display:flex}
+#tileMenu .tm-head{font-size:11px;color:#7f97bd;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tileMenu button{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;font-size:13.5px;font-weight:600;color:#eaf1ff;text-align:left;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#tileMenu button .material-symbols-rounded{font-size:19px;color:#9fb8db}
+#tileMenu button.danger{color:#ff8593}
+#tileMenu button.danger .material-symbols-rounded{color:#ff6b7a}
+@media (hover:hover){#tileMenu button:hover{background:rgba(255,255,255,.07)}#tileMenu button.danger:hover{background:rgba(234,75,90,.14)}}
 .tile .thand.show{display:flex}
 
 /* side panel — dark glass */
@@ -259,6 +278,12 @@ input,textarea,select{font-family:inherit}
      it overflows and needs to scroll — align-items:center would clip the top. */
   .mt-grid{gap:8px;align-content:start;margin:auto 0}
   .tile{aspect-ratio:16/10;max-width:none;height:auto;min-height:150px;border-radius:16px}
+  /* Spotlight mode sizes tiles from the grid rows, so drop the fixed shape and
+     the scrolling strip — the pinned view is meant to fit one screen. */
+  .mt-grid.pinned{margin:0;height:100%}
+  .mt-grid.pinned .tile{aspect-ratio:auto;height:100%;min-height:0}
+  .tile .tmore{bottom:8px;right:8px;width:30px;height:30px;border-radius:9px}
+  .tile .tmore .material-symbols-rounded{font-size:18px}
   .tile .tav{width:64px;height:64px;font-size:26px}
   .tile .tname{top:8px;right:8px;font-size:11px;padding:3px 8px;gap:5px}
   .tile .thand{top:8px;left:8px;width:30px;height:30px;font-size:16px}
