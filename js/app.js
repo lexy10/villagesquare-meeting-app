@@ -253,8 +253,41 @@ function applyPj(){
   updatePjBtns();
 }
 function updatePjBtns(){ const m=pvEl('mic'),c=pvEl('cam'); if(!m||!c)return; m.classList.toggle('off',!pjMicOn); m.querySelector('.material-symbols-rounded').textContent=pjMicOn?'mic':'mic_off'; c.classList.toggle('off',!pjCamOn); c.querySelector('.material-symbols-rounded').textContent=pjCamOn?'videocam':'videocam_off'; }
+// The mic stays a plain enable/disable: silencing it needs no device release,
+// and re-acquiring audio is exactly what iOS refuses to re-prompt for.
 function pjMic(){ pjMicOn=!pjMicOn; applyPj(); }
-function pjCam(){ pjCamOn=!pjCamOn; applyPj(); }
+
+// The camera is different — disabling a video track only blanks the frames, it
+// keeps the capture open and the device light on. Turning it off here stops and
+// drops the track outright, and turning it back on re-acquires one.
+let _pjCamBusy=false;
+async function pjCam(){
+  if(_pjCamBusy)return;
+  _pjCamBusy=true;
+  const btn=pvEl('cam'); if(btn) btn.disabled=true;
+  try{
+    if(pjCamOn){
+      if(pjStream) pjStream.getVideoTracks().forEach(t=>{ try{ t.stop(); }catch{} pjStream.removeTrack(t); });
+      pjCamOn=false;
+      // Re-point the element so it drops the last painted frame.
+      const v=pvEl('v'); if(v) v.srcObject=pjStream&&pjStream.getTracks().length?pjStream:null;
+    }else{
+      const fresh=await navigator.mediaDevices.getUserMedia({video:true});
+      const track=fresh.getVideoTracks()[0];
+      if(pjStream) pjStream.addTrack(track); else pjStream=fresh;
+      pjCamOn=true;
+      const v=pvEl('v'); if(v) v.srcObject=pjStream;
+    }
+  }catch(e){
+    console.warn('preview camera toggle failed',e);
+    pjCamOn=false;
+    toast(deviceError(e,'Camera',true),4000);
+  }finally{
+    _pjCamBusy=false;
+    if(btn) btn.disabled=false;
+    applyPj();
+  }
+}
 function onPjName(){ const v=document.getElementById('pjName').value.trim(); document.getElementById('btnGuestJoin').disabled=!v; updatePjTag(); }
 function updatePjTag(){ const v=document.getElementById('pjName').value.trim()||'You'; document.getElementById('pjTag').textContent=v; document.getElementById('pjAv').textContent=initials(v); }
 function leavePrejoin(){ stopPreview(); show('landing'); }
