@@ -141,7 +141,7 @@ input,textarea,select{font-family:inherit}
 .formhint{font-size:12.5px;color:var(--muted);font-family:'Inter';margin-top:8px}
 
 /* ================= PRE-JOIN ================= */
-#prejoin{background:radial-gradient(1000px 500px at 50% -10%,var(--bg-hi) 0%,var(--bg) 60%)}
+#prejoin,#hostSetup{background:radial-gradient(1000px 500px at 50% -10%,var(--bg-hi) 0%,var(--bg) 60%)}
 .pj-top{height:72px;display:flex;align-items:center;padding:0 34px;gap:12px;flex-shrink:0}
 .pj-body{flex:1 0 auto;display:flex;align-items:center;justify-content:center;gap:54px;padding:0 40px 48px;flex-wrap:wrap}
 .pj-preview{position:relative;width:100%;max-width:640px;aspect-ratio:16/9;background:var(--navy);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px rgba(13,27,42,.18)}

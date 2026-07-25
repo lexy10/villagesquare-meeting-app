@@ -125,7 +125,16 @@ async function rejoinAsHost(){
 
 // ---------- landing ----------
 function onCode(){ document.getElementById('btnJoin').disabled=!document.getElementById('joinCode').value.trim(); }
-function goHostSignin(){ if(accessToken){ show('hostSetup'); } else { show('hostSignin'); setTimeout(()=>document.getElementById('hEmail').focus(),50); } }
+function goHostSignin(){ if(accessToken){ openHostSetup(); } else { show('hostSignin'); setTimeout(()=>document.getElementById('hEmail').focus(),50); } }
+// Host setup mirrors the guest pre-join: see yourself, set mic/camera, then
+// enter with exactly those settings.
+function openHostSetup(){
+  previewCtx='hs'; pjCamOn=true; pjMicOn=true;
+  document.getElementById('hsAv').textContent=initials(myName()||'Host');
+  updatePjBtns(); show('hostSetup'); startPreview();
+  setTimeout(()=>document.getElementById('mTitle').select(),50);
+}
+function cancelHostSetup(){ stopPreview(); show('landing'); }
 function goGuest(){ const v=document.getElementById('joinCode').value.trim(); if(!v)return; checkAndProceed(normalizeRoom(v)); }
 function normalizeRoom(v){ try{ if(v.startsWith('http')){ const u=new URL(v); return u.searchParams.get('room')||v; } }catch{} return v.trim(); }
 
@@ -160,7 +169,7 @@ async function doLogin(){
     if(!accessToken) throw new Error('No access token in response');
     document.getElementById('lpAvatar').textContent=initials(email);
     if(pendingRejoin){ pendingRejoin=false; show('landing'); await rejoinAsHost(); return; }
-    show('hostSetup'); setTimeout(()=>document.getElementById('mTitle').select(),50);
+    openHostSetup();
   }catch(e){ err.textContent=e.message; err.classList.add('show'); }
   finally{ btn.disabled=false; btn.innerHTML='<span class="material-symbols-rounded">login</span> Sign in'; }
 }
@@ -170,13 +179,20 @@ async function startMeeting(){
   const title=document.getElementById('mTitle').value.trim()||'VillageSquare Meeting';
   const err=document.getElementById('startErr'); err.classList.remove('show');
   const btn=document.getElementById('btnStart'); btn.disabled=true; btn.innerHTML='<span class="material-symbols-rounded">progress_activity</span> Starting…';
+  // Enter with whatever was chosen in the preview, exactly like a guest does.
+  camOn=pjCamOn; micOn=pjMicOn;
   let seed=null;
   try{
-    // Capture before any other await, while still inside the click gesture:
-    // iOS only shows the camera/mic sheet for a gesture-initiated getUserMedia,
-    // and the granted tracks are then reused for the whole session.
-    try{ seed=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); }
-    catch(e){ console.warn('host media capture failed',e); camOn=false; micOn=false; toast('Starting without camera/mic — you can enable them in the meeting.',4000); }
+    if(pjStream){
+      // Hand the preview's already-permitted tracks straight to LiveKit — the
+      // same path guests use, and what keeps the mic working on iOS.
+      seed=pjStream; pjStream=null; detachPreview();
+    }else{
+      // No preview stream (permission denied, or it was stopped): capture now,
+      // still inside the click gesture so iOS will show the prompt.
+      try{ seed=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); }
+      catch(e){ console.warn('host media capture failed',e); camOn=false; micOn=false; toast('Starting without camera/mic — you can enable them in the meeting.',4000); }
+    }
     const fd=new FormData(); fd.append('title',title); fd.append('category_id','38'); fd.append('privacy','everyone');
     const d=await apiFetch('/livestreams/start',{method:'POST',multipart:true,body:fd});
     roomId = d.room_id; livekitUrl = d.livekit_url; livestreamUuid = d.uuid; myRole='host';
@@ -200,22 +216,43 @@ function myName(){ return document.getElementById('hEmail')?.value?.split('@')[0
 
 // ---------- guest: pre-join ----------
 function openPrejoin(){
+  previewCtx='pj';
   document.getElementById('pjRoom').textContent=pendingRoom;
   document.getElementById('pjTitle').textContent=pendingTitle?('Join “'+pendingTitle+'”'):'Join the meeting';
   document.getElementById('pjName').value=localStorage.getItem('vsm_name')||'';
   onPjName(); updatePjTag(); show('prejoin'); startPreview();
 }
+// The host and the guest both get a live preview before entering. They are
+// separate screens with their own elements, so the preview helpers resolve
+// their targets through previewCtx instead of hard-coding the guest ids.
+let previewCtx='pj';   // 'pj' = guest pre-join, 'hs' = host setup
+function pvEl(part){
+  const ids = previewCtx==='hs'
+    ? {v:'hsVideo',off:'hsOff',av:'hsAv',mic:'hsMicBtn',cam:'hsCamBtn'}
+    : {v:'pjVideo',off:'pjOff',av:'pjAv',mic:'pjMicBtn',cam:'pjCamBtn'};
+  return document.getElementById(ids[part]);
+}
 async function startPreview(){
   stopPreview();
-  try{ pjStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); document.getElementById('pjVideo').srcObject=pjStream; applyPj(); }
-  catch{ pjCamOn=false; pjMicOn=false; document.getElementById('pjOff').classList.add('show'); updatePjBtns(); toast('Camera/mic unavailable — you can still join.'); }
+  try{ pjStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); pvEl('v').srcObject=pjStream; applyPj(); }
+  catch{ pjCamOn=false; pjMicOn=false; pvEl('off').classList.add('show'); updatePjBtns(); toast('Camera/mic unavailable — you can still continue.'); }
 }
 function stopPreview(){ if(pjStream){ pjStream.getTracks().forEach(t=>t.stop()); pjStream=null; } detachPreview(); }
 // Release the <video> element WITHOUT stopping the tracks — used when the
 // preview stream is being handed to LiveKit instead of discarded.
-function detachPreview(){ const v=document.getElementById('pjVideo'); if(v){ try{ v.srcObject=null; }catch{} } }
-function applyPj(){ if(!pjStream)return; pjStream.getVideoTracks().forEach(t=>t.enabled=pjCamOn); pjStream.getAudioTracks().forEach(t=>t.enabled=pjMicOn); document.getElementById('pjOff').classList.toggle('show',!pjCamOn); updatePjBtns(); }
-function updatePjBtns(){ const m=document.getElementById('pjMicBtn'),c=document.getElementById('pjCamBtn'); m.classList.toggle('off',!pjMicOn); m.querySelector('.material-symbols-rounded').textContent=pjMicOn?'mic':'mic_off'; c.classList.toggle('off',!pjCamOn); c.querySelector('.material-symbols-rounded').textContent=pjCamOn?'videocam':'videocam_off'; }
+function detachPreview(){ const v=pvEl('v'); if(v){ try{ v.srcObject=null; }catch{} } }
+// Note the button/overlay refresh happens even with no stream: when permission
+// was denied there are no tracks to flip, but the toggles must still respond so
+// the choice you make is visible — and it is still carried into the meeting.
+function applyPj(){
+  if(pjStream){
+    pjStream.getVideoTracks().forEach(t=>t.enabled=pjCamOn);
+    pjStream.getAudioTracks().forEach(t=>t.enabled=pjMicOn);
+  }
+  const off=pvEl('off'); if(off) off.classList.toggle('show',!pjCamOn);
+  updatePjBtns();
+}
+function updatePjBtns(){ const m=pvEl('mic'),c=pvEl('cam'); if(!m||!c)return; m.classList.toggle('off',!pjMicOn); m.querySelector('.material-symbols-rounded').textContent=pjMicOn?'mic':'mic_off'; c.classList.toggle('off',!pjCamOn); c.querySelector('.material-symbols-rounded').textContent=pjCamOn?'videocam':'videocam_off'; }
 function pjMic(){ pjMicOn=!pjMicOn; applyPj(); }
 function pjCam(){ pjCamOn=!pjCamOn; applyPj(); }
 function onPjName(){ const v=document.getElementById('pjName').value.trim(); document.getElementById('btnGuestJoin').disabled=!v; updatePjTag(); }

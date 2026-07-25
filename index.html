@@ -121,15 +121,31 @@
 </div>
 
 <!-- ================= HOST SETUP ================= -->
-<div class="screen cardscreen" id="hostSetup">
-  <div class="card">
-    <div class="brandrow"><div class="vsmark sm"><img src="logo.png" alt="VillageSquare"></div><div class="wordmark" style="font-size:16px"><b>villagesquare</b> <span class="meet">meet</span></div></div>
-    <h2>Name your meeting</h2>
-    <p class="csub">This starts a live room on VillageSquare. You’ll get a shareable link right after.</p>
-    <div class="field"><label>Meeting title</label><input id="mTitle" placeholder="e.g. Village Standup" value="VillageSquare Meeting"></div>
-    <div class="err" id="startErr"></div>
-    <button class="btn-primary" id="btnStart" onclick="startMeeting()"><span class="material-symbols-rounded">rocket_launch</span> Start meeting</button>
-    <div class="back"><button onclick="show('landing')">← Cancel</button></div>
+<div class="screen" id="hostSetup">
+  <div class="pj-top">
+    <button class="iconbtn" onclick="cancelHostSetup()"><span class="material-symbols-rounded">arrow_back</span></button>
+    <div class="vsmark sm"><img src="logo.png" alt="VillageSquare"></div>
+    <div class="wordmark" style="font-size:16px"><b>villagesquare</b> <span class="meet">meet</span></div>
+  </div>
+  <div class="pj-body">
+    <div class="pj-preview">
+      <video id="hsVideo" autoplay playsinline muted></video>
+      <div class="pj-off" id="hsOff"><div class="av" id="hsAv">?</div><div>Camera is off</div></div>
+      <div class="pj-tag">You (host)</div>
+      <div class="pj-ctrls">
+        <button class="pj-cbtn" id="hsMicBtn" onclick="pjMic()" title="Microphone"><span class="material-symbols-rounded">mic</span></button>
+        <button class="pj-cbtn" id="hsCamBtn" onclick="pjCam()" title="Camera"><span class="material-symbols-rounded">videocam</span></button>
+      </div>
+    </div>
+    <div class="pj-right">
+      <div class="eyebrow">Start a meeting</div>
+      <h2>Name your meeting</h2>
+      <div class="rmeta">You’ll get a shareable link right after</div>
+      <input class="name" id="mTitle" placeholder="e.g. Village Standup" value="VillageSquare Meeting" onkeydown="if(event.key==='Enter')startMeeting()">
+      <div class="err" id="startErr"></div>
+      <button class="btn-primary" id="btnStart" onclick="startMeeting()"><span class="material-symbols-rounded">rocket_launch</span> Start meeting</button>
+      <p class="pj-hint">You’ll join with the camera and mic settings you pick here.</p>
+    </div>
   </div>
 </div>
 
