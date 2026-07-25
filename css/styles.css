@@ -206,7 +206,7 @@ input,textarea,select{font-family:inherit}
 .filmstrip::-webkit-scrollbar-thumb{background:var(--chip-hi);border-radius:6px}
 .filmstrip .tile{flex:0 0 auto;width:100%;height:auto;aspect-ratio:4/3;max-width:none;min-height:0;border-radius:14px}
 .filmstrip .tile .tav{width:52px;height:52px;font-size:20px}
-.filmstrip .tile .tname{font-size:11px;padding:3px 8px;top:7px;right:7px}
+.filmstrip .tile .tname{font-size:11px;padding:3px 8px;top:7px;left:7px;max-width:calc(100% - 46px)}
 /* Portrait spotlight, wide screens only: it needs just ~9:16 of the height, so
    centre the pair and run the filmstrip two-up instead of stranding empty space
    beside it. Phones stack (spotlight above, strip below) and must not inherit
@@ -217,18 +217,19 @@ input,textarea,select{font-family:inherit}
   .mt-grid.pinned.pin-portrait .filmstrip{flex:0 0 428px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
   .mt-grid.pinned.pin-portrait .filmstrip .tile{width:100%}
 }
-.tile .tname{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:7px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);padding:5px 11px;border-radius:11px;font-size:13px;font-weight:600;max-width:calc(100% - 24px)}
+.tile .tname{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:7px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);padding:5px 11px;border-radius:11px;font-size:13px;font-weight:600;max-width:calc(100% - 62px)}
 .tile .tname .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile .tname .material-symbols-rounded{font-size:16px;color:#ff6b7a}
 .tile .badge-you{background:var(--grad);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:6px;letter-spacing:.4px}
-.tile .thand{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:11px;background:#ffce3a;display:none;align-items:center;justify-content:center;font-size:18px;box-shadow:0 6px 14px rgba(0,0,0,.3)}
+.tile .thand{position:absolute;bottom:12px;left:12px;width:34px;height:34px;border-radius:11px;background:#ffce3a;color:#4a3600;display:none;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(0,0,0,.3)}
+.tile .thand .material-symbols-rounded{font-size:20px}
 /* spotlight marker + host's per-tile menu button */
 .tile.pin{box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .tile.pin::after{border-color:rgba(0,212,255,.55)}
-.tile .tpin{position:absolute;top:12px;left:12px;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(0,212,255,.9);color:#04263a}
+.tile .tpin{position:absolute;bottom:12px;left:12px;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(0,212,255,.9);color:#04263a}
 .tile .tpin .material-symbols-rounded{font-size:17px}
 .tile .thand.show ~ .tpin{left:50px}
-.tile .tmore{position:absolute;bottom:10px;right:10px;width:34px;height:34px;border-radius:11px;background:rgba(6,14,28,.62);backdrop-filter:blur(8px);color:var(--ink);display:flex;align-items:center;justify-content:center;opacity:.85;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.tile .tmore{position:absolute;top:10px;right:10px;width:34px;height:34px;border-radius:11px;background:rgba(6,14,28,.62);backdrop-filter:blur(8px);color:var(--ink);display:flex;align-items:center;justify-content:center;opacity:.85;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .tile .tmore .material-symbols-rounded{font-size:20px}
 @media (hover:hover){.tile .tmore:hover{background:rgba(6,14,28,.85);opacity:1}}
 
@@ -240,7 +241,8 @@ input,textarea,select{font-family:inherit}
 #tileMenu button .material-symbols-rounded{font-size:19px;color:var(--muted)}
 #tileMenu button.danger{color:#ff8593}
 #tileMenu button.danger .material-symbols-rounded{color:#ff6b7a}
-@media (hover:hover){#tileMenu button:hover{background:var(--chip)}#tileMenu button.danger:hover{background:rgba(234,75,90,.14)}}
+#tileMenu button:disabled{opacity:.4;cursor:default;pointer-events:none}
+@media (hover:hover){#tileMenu button:not(:disabled):hover{background:var(--chip)}#tileMenu button.danger:not(:disabled):hover{background:rgba(234,75,90,.14)}}
 .tile .thand.show{display:flex}
 
 /* side panel — dark glass */
@@ -378,6 +380,9 @@ input,textarea,select{font-family:inherit}
      it overflows and needs to scroll — align-items:center would clip the top. */
   .mt-grid{gap:8px;align-content:start;margin:auto 0}
   .tile{aspect-ratio:16/10;max-width:none;height:auto;min-height:150px;border-radius:16px}
+  /* exactly 3 on a phone: share the height instead of overflowing into a scroll */
+  .mt-grid.fit{height:100%}
+  .mt-grid.fit .tile{aspect-ratio:auto;height:100%;min-height:0}
   /* Spotlight mode sizes tiles from the grid rows, so drop the fixed shape and
      the scrolling strip — the pinned view is meant to fit one screen. */
   /* Phone: a 232px side strip would leave the spotlight too narrow, so the
@@ -389,11 +394,12 @@ input,textarea,select{font-family:inherit}
   .filmstrip{flex:0 0 auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:8px;padding-bottom:2px;justify-content:flex-start}
   .filmstrip .tile{flex:0 0 128px;width:128px}
   .filmstrip .tile .tav{width:40px;height:40px;font-size:16px}
-  .tile .tmore{bottom:8px;right:8px;width:30px;height:30px;border-radius:9px}
+  .tile .tmore{top:8px;right:8px;width:30px;height:30px;border-radius:9px}
   .tile .tmore .material-symbols-rounded{font-size:18px}
   .tile .tav{width:64px;height:64px;font-size:26px}
-  .tile .tname{top:8px;right:8px;font-size:11px;padding:3px 8px;gap:5px}
-  .tile .thand{top:8px;left:8px;width:30px;height:30px;font-size:16px}
+  .tile .tname{top:8px;left:8px;font-size:11px;padding:3px 8px;gap:5px;max-width:calc(100% - 50px)}
+  .tile .thand{bottom:8px;left:8px;width:30px;height:30px}
+  .tile .thand .material-symbols-rounded{font-size:17px}
 
   /* control dock → full-width bottom bar that always fits */
   .mt-dock{left:8px;right:8px;bottom:calc(10px + env(safe-area-inset-bottom));transform:none;width:auto;justify-content:space-around;gap:2px;padding:7px 6px;border-radius:18px}

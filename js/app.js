@@ -302,7 +302,7 @@ async function publishLocalMedia(seed){
 
 async function connectRoom(token, displayName, title, seedStream){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
-  ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
+  ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackPublished','TrackUnpublished','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
   // Mirror server-side (host) mutes into our own control state.
   ['TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
@@ -343,95 +343,185 @@ function cols(n){
   if(isPhonePortrait()) return n<=3?1:2;
   return n<=1?1:n<=4?2:n<=9?3:4;
 }
+// Tiles persist across renders, keyed by identity. Rebuilding them wholesale on
+// every mute/camera event detached and re-attached every <video> in the room,
+// which is what made everyone's tiles blink whenever anyone toggled anything.
+const tileEls=new Map();
+let stripEl=null;
+
+// A publication is only renderable if its track is actually alive. During an
+// unpublish the publication can briefly still be present with a dead track —
+// attaching that paints a black tile that only cleared on the next full render
+// (which is why toggling the theme "fixed" it).
+function liveVideo(p){
+  const pick=(pub,isScr)=>{
+    if(!pub||!pub.track||pub.isMuted) return null;
+    const mst=pub.track.mediaStreamTrack;
+    if(mst && mst.readyState!=='live') return null;
+    return {pub,track:pub.track,isScr};
+  };
+  return pick(p.getTrackPublication(LK.Track.Source.ScreenShare),true)
+      || pick(p.getTrackPublication(LK.Track.Source.Camera),false);
+}
+
+function ensureTile(p){
+  let el=tileEls.get(p.identity);
+  if(el) return el;
+  el=document.createElement('div');
+  el.className='tile'; el.dataset.id=p.identity;
+  const av=document.createElement('div'); av.className='tav';
+  // Material icon rather than the ✋ emoji: the emoji renders in its own yellow,
+  // which disappeared against the yellow badge.
+  const hand=document.createElement('div'); hand.className='thand';
+  hand.innerHTML='<span class="material-symbols-rounded">front_hand</span>';
+  const label=document.createElement('div'); label.className='tname';
+  el.append(av,hand,label);
+  tileEls.set(p.identity,el);
+  return el;
+}
+
+function updateTile(el,p,{local,isPinned,grid}){
+  const vsel=liveVideo(p);
+  // Swap the media element only when the underlying track really changed.
+  const wantV=vsel?(vsel.pub.trackSid||vsel.pub.sid||'v'):'';
+  if(wantV!==(el.dataset.vsid||'')){
+    const old=el.querySelector('video');
+    if(old){ try{ old.srcObject=null; }catch{} old.remove(); }
+    if(vsel){
+      const v=vsel.track.attach();
+      v.autoplay=true; v.playsInline=true; v.muted=true;
+      el.insertBefore(v,el.firstChild);
+    }
+    el.dataset.vsid=wantV;
+  }
+  // Spotlight follows the sender's real aspect ratio (and re-checks on rotate).
+  const v=el.querySelector('video');
+  if(isPinned&&v&&vsel){
+    const setAR=(w,h)=>{ if(w&&h){ el.style.setProperty('--pin-ar',w+'/'+h); grid.classList.toggle('pin-portrait',h>w); } };
+    const dim=vsel.pub.dimensions;
+    if(dim) setAR(dim.width,dim.height);
+    if(!v.dataset.arWired){ v.dataset.arWired='1';
+      v.addEventListener('loadedmetadata',()=>setAR(v.videoWidth,v.videoHeight));
+      v.addEventListener('resize',()=>setAR(v.videoWidth,v.videoHeight));
+    }
+  }
+  if(!isPinned) el.style.removeProperty('--pin-ar');
+
+  const av=el.querySelector('.tav');
+  if(vsel){ av.style.display='none'; }
+  else{ av.style.cssText=avatarStyle(p.identity); av.textContent=initials(p.name||p.identity); }
+
+  const mic=p.getTrackPublication(LK.Track.Source.Microphone);
+  const micLive=!!(mic&&mic.track&&!mic.isMuted);
+  const wantA=(!local&&micLive)?(mic.trackSid||mic.sid||'a'):'';
+  if(wantA!==(el.dataset.asid||'')){
+    const olda=el.querySelector('audio');
+    if(olda){ try{ olda.srcObject=null; }catch{} olda.remove(); }
+    if(wantA){ const a=mic.track.attach(); a.style.display='none'; el.appendChild(a); }
+    el.dataset.asid=wantA;
+  }
+
+  const name=p.name||p.identity;
+  const label=el.querySelector('.tname');
+  const html=(micLive?'':'<span class="material-symbols-rounded">mic_off</span>')+
+    `<span class="nm">${esc(name)}</span>`+(local?'<span class="badge-you">YOU</span>':'');
+  if(label.innerHTML!==html) label.innerHTML=html;
+
+  el.querySelector('.thand').classList.toggle('show',handsUp.has(p.identity));
+  el.classList.toggle('screen',!!(vsel&&vsel.isScr));
+  el.classList.toggle('local',local&&!(vsel&&vsel.isScr));
+  el.classList.toggle('speaking',speaking.has(p.identity));
+  el.classList.toggle('pin',isPinned);
+
+  let badge=el.querySelector('.tpin');
+  if(isPinned&&!badge){ badge=document.createElement('div'); badge.className='tpin';
+    badge.innerHTML='<span class="material-symbols-rounded">push_pin</span>'; el.appendChild(badge); }
+  else if(!isPinned&&badge) badge.remove();
+
+  // Moderation is host-only; the role can change on rejoin, so keep it in sync.
+  let more=el.querySelector('.tmore');
+  if(myRole==='host'&&!more){
+    more=document.createElement('button'); more.className='tmore'; more.title='Participant options';
+    more.innerHTML='<span class="material-symbols-rounded">more_vert</span>';
+    more.onclick=(ev)=>{ ev.stopPropagation(); openTileMenu(el.dataset.id,el.dataset.nm||el.dataset.id,el.classList.contains('local'),ev.currentTarget); };
+    el.appendChild(more);
+  }else if(myRole!=='host'&&more) more.remove();
+  el.dataset.nm=name;
+}
+
+// Move only the nodes that are out of position, so untouched tiles are never
+// detached (detaching a <video> is what causes the visible flash).
+function placeChildren(container,els){
+  els.forEach((el,i)=>{ if(container.children[i]!==el) container.insertBefore(el,container.children[i]||null); });
+  while(container.children.length>els.length) container.lastElementChild.remove();
+}
+
 function renderGrid(){
   if(!room)return; const grid=document.getElementById('grid');
-  grid.querySelectorAll('video,audio').forEach(el=>{try{el.srcObject=null;}catch{}el.remove();}); grid.innerHTML='';
   const ps=parts();
   const phone=isPhonePortrait();
-  // A pinned participant is hoisted to the front and given a full-width row;
-  // everyone else shares a smaller strip beneath it.
   const pinIdx = pinned ? ps.findIndex(p=>p.identity===pinned) : -1;
   const hasPin = pinIdx>=0;
   if(hasPin) ps.unshift(ps.splice(pinIdx,1)[0]);
   const n=ps.length;
-  let c, centred=false, rowCount=1;
+  let c, centred=false, rowCount=1, fit=false;
   grid.classList.toggle('pinned',hasPin);
   if(!hasPin) grid.classList.remove('pin-portrait');
+
   if(hasPin){
-    // Layout is flexbox in CSS (spotlight + filmstrip), so clear any grid
-    // template left over from the un-pinned view.
     grid.style.gridTemplateColumns=''; grid.style.gridTemplateRows='';
     grid.style.height='100%'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
   }else{
     c=cols(n); const r=Math.ceil(n/c);
     grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
     if(phone){
-      // Phones keep each tile at a readable shape (set in CSS) and let the strip
-      // scroll instead of squashing everyone into slivers to fit one screenful.
-      grid.style.gridTemplateRows=`repeat(${r},auto)`;
-      grid.style.height='auto'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
+      // Three full-width tiles at their natural shape overflow a phone screen,
+      // so at exactly 3 they shrink to share the height instead of scrolling.
+      fit = n===3;
+      grid.style.gridTemplateRows=`repeat(${r},${fit?'1fr':'auto'})`;
+      grid.style.height=fit?'100%':'auto';
+      grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
     }else{
-      // Twice as many columns as tiles, each tile spanning two: a row with
-      // fewer tiles than the rest can then start on a half-column and sit
-      // centred (5 people = 3 up, 2 centred underneath) instead of hugging
-      // the left with a hole on the right.
+      // Twice as many columns as tiles, each spanning two, so a short last row
+      // starts on a half-column and sits centred (5 = 3 up, 2 centred).
       grid.style.gridTemplateColumns=`repeat(${c*2},1fr)`;
       grid.style.gridTemplateRows=`repeat(${r},1fr)`;
       grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
       centred=true; rowCount=r;
     }
   }
-  // Everyone except the spotlight goes into a scrollable filmstrip.
-  const strip = hasPin ? document.createElement('div') : null;
-  if(strip) strip.className='filmstrip';
+  grid.classList.toggle('fit',fit);
+
+  const mainEls=[], stripTiles=[];
   ps.forEach((p,i)=>{
     const local=p===room.localParticipant;
     const isPinned=hasPin&&i===0;
-    const tile=document.createElement('div'); tile.className='tile'+(local?' local':'')+(speaking.has(p.identity)?' speaking':'')+(isPinned?' pin':''); tile.dataset.id=p.identity;
+    const el=ensureTile(p);
+    updateTile(el,p,{local,isPinned,grid});
     if(centred){
       const row=Math.floor(i/c), inRow=i%c;
-      const isLastRow=row===rowCount-1;
-      const inThisRow=isLastRow ? n-(rowCount-1)*c : c;   // tiles sharing this row
-      tile.style.gridColumn=`${(c-inThisRow)+1+2*inRow} / span 2`;
-    }
-    const scr=p.getTrackPublication(LK.Track.Source.ScreenShare), cam=p.getTrackPublication(LK.Track.Source.Camera);
-    let vt=null,isScr=false;
-    if(scr&&scr.track&&!scr.isMuted){vt=scr.track;isScr=true;} else if(cam&&cam.track&&!cam.isMuted){vt=cam.track;}
-    if(vt){ const v=vt.attach(); v.autoplay=true;v.playsInline=true;v.muted=true; if(isScr){tile.classList.add('screen');tile.classList.remove('local');} tile.appendChild(v);
-      // Shape the spotlight to whatever the sender is actually publishing, so a
-      // phone in portrait doesn't get letterboxed into a landscape box (and a
-      // desktop share doesn't get a tall one). Publication dimensions are known
-      // up front for remote tracks; the video element is the fallback and the
-      // correction if the sender rotates mid-call.
-      if(isPinned){
-        // Portrait spotlights are narrow, which frees a lot of width — the grid
-        // gets a class so the filmstrip can widen into two columns instead of
-        // leaving a dead band down the middle.
-        const setAR=(w,h)=>{ if(w&&h){ tile.style.setProperty('--pin-ar', w+'/'+h); grid.classList.toggle('pin-portrait', h>w); } };
-        const dim=(isScr?scr:cam)&&(isScr?scr:cam).dimensions;
-        if(dim) setAR(dim.width,dim.height);
-        v.addEventListener('loadedmetadata',()=>setAR(v.videoWidth,v.videoHeight));
-        v.addEventListener('resize',()=>setAR(v.videoWidth,v.videoHeight));
-      }
-    }
-    else { const a=document.createElement('div');a.className='tav';a.style.cssText=avatarStyle(p.identity);a.textContent=initials(p.name||p.identity);tile.appendChild(a); }
-    const hand=document.createElement('div');hand.className='thand'+(handsUp.has(p.identity)?' show':'');hand.textContent='✋';tile.appendChild(hand);
-    const mic=p.getTrackPublication(LK.Track.Source.Microphone); const muted=!mic||!mic.track||mic.isMuted;
-    const label=document.createElement('div');label.className='tname';
-    label.innerHTML=(muted?'<span class="material-symbols-rounded">mic_off</span>':'')+`<span class="nm">${esc(p.name||p.identity)}</span>`+(local?'<span class="badge-you">YOU</span>':'');
-    tile.appendChild(label);
-    if(!local&&mic&&mic.track&&!mic.isMuted){const au=mic.track.attach();au.style.display='none';tile.appendChild(au);}
-    if(isPinned){ const pb=document.createElement('div'); pb.className='tpin'; pb.innerHTML='<span class="material-symbols-rounded">push_pin</span>'; tile.appendChild(pb); }
-    // Moderation is host-only; guests get no menu button at all.
-    if(myRole==='host'){
-      const mb=document.createElement('button'); mb.className='tmore'; mb.title='Participant options';
-      mb.innerHTML='<span class="material-symbols-rounded">more_vert</span>';
-      mb.onclick=(ev)=>{ ev.stopPropagation(); openTileMenu(p.identity, p.name||p.identity, local, ev.currentTarget); };
-      tile.appendChild(mb);
-    }
-    (isPinned||!strip ? grid : strip).appendChild(tile);
+      const inThisRow=(row===rowCount-1) ? n-(rowCount-1)*c : c;
+      el.style.gridColumn=`${(c-inThisRow)+1+2*inRow} / span 2`;
+    }else el.style.removeProperty('grid-column');
+    (hasPin&&!isPinned ? stripTiles : mainEls).push(el);
   });
-  if(strip&&strip.children.length) grid.appendChild(strip);
+
+  if(hasPin&&stripTiles.length){
+    if(!stripEl){ stripEl=document.createElement('div'); stripEl.className='filmstrip'; }
+    placeChildren(stripEl,stripTiles);
+    placeChildren(grid,[...mainEls,stripEl]);
+  }else{
+    if(stripEl&&stripEl.parentNode) stripEl.remove();
+    placeChildren(grid,mainEls);
+  }
+
+  // Drop tiles for anyone who has left, releasing their media elements.
+  const alive=new Set(ps.map(p=>p.identity));
+  tileEls.forEach((el,id)=>{
+    if(alive.has(id)) return;
+    el.querySelectorAll('video,audio').forEach(m=>{ try{ m.srcObject=null; }catch{} });
+    el.remove(); tileEls.delete(id);
+  });
   document.getElementById('peopleCnt').textContent=n;
 }
 function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('speaking',speaking.has(t.dataset.id))); }
@@ -472,8 +562,12 @@ function openTileMenu(identity,name,isLocal,anchor){
     `<button onclick="setPin('${identity}');closeTileMenu()"><span class="material-symbols-rounded">${isPinned?'push_pin':'push_pin'}</span>${isPinned?'Unpin':'Pin for everyone'}</button>`,
   ];
   if(!isLocal){
-    rows.push(`<button onclick="moderate('${identity}','${micMuted?'unmute':'mute'}','${micMuted?'Asked to unmute':'Muted'} ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">${micMuted?'mic':'mic_off'}</span>${micMuted?'Unmute':'Mute'}</button>`);
-    rows.push(`<button onclick="moderate('${identity}','${camOff?'start_video':'stop_video'}','${camOff?'Asked to start video':'Stopped video for'} ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">${camOff?'videocam':'videocam_off'}</span>${camOff?'Start video':'Stop video'}</button>`);
+    // Mute and stop-video are one-way: a host can silence someone, but only that
+    // person can reopen their own mic/camera (the browser will not hand the
+    // device back without their gesture). So when it's already done, the row is
+    // shown disabled rather than offering an "unmute" that cannot work.
+    rows.push(`<button ${micMuted?'disabled':''} onclick="moderate('${identity}','mute','Muted ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">mic_off</span>${micMuted?'Already muted':'Mute'}</button>`);
+    rows.push(`<button ${camOff?'disabled':''} onclick="moderate('${identity}','stop_video','Stopped video for ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">videocam_off</span>${camOff?'Video already off':'Pause video'}</button>`);
     rows.push(`<button class="danger" onclick="moderate('${identity}','remove','Removed ${esc(name)}');closeTileMenu()"><span class="material-symbols-rounded">person_remove</span>Remove from meeting</button>`);
   }
   m.innerHTML=`<div class="tm-head">${esc(name)}</div>`+rows.join('');
@@ -636,7 +730,8 @@ async function endMeeting(){
     toast('Could not end meeting: '+e.message,4500);
   }
 }
-function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; pinned=''; closeTileMenu(); handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
+function cleanup(){ tileEls.forEach(el=>{ el.querySelectorAll('video,audio').forEach(m=>{try{m.srcObject=null;}catch{}}); el.remove(); }); tileEls.clear(); if(stripEl){ stripEl.remove(); stripEl=null; }
+  room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; pinned=''; closeTileMenu(); handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
   document.getElementById('grid').innerHTML=''; closePanel(); closeLeaveMenu(); document.getElementById('shareModal').classList.remove('open');
   ['btnGuestJoin','btnStart'].forEach(id=>{const b=document.getElementById(id); if(b)b.disabled=false;});
   document.getElementById('btnGuestJoin').innerHTML='<span class="material-symbols-rounded">login</span> Join now';
