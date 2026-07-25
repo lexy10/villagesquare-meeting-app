@@ -423,18 +423,24 @@ async function publishLocalMedia(seed){
   _applyingLocalMedia=true;
   try{
     const at=seed&&seed.getAudioTracks&&seed.getAudioTracks()[0];
-    const vt=seed&&seed.getVideoTracks&&seed.getVideoTracks()[0];
+    let vt=seed&&seed.getVideoTracks&&seed.getVideoTracks()[0];
+    // Camera chosen off: release it instead of publishing a disabled track.
+    // Publishing it would keep the capture open (device light on) and leave a
+    // window where a frame could reach the room before the mute lands.
+    if(vt&&!wantCam){ try{ vt.stop(); }catch{} vt=null; }
     if(at||vt){
       try{
-        // The preview muted by flipping MediaStreamTrack.enabled, which LiveKit
-        // cannot see. Hand over live tracks and let LiveKit's own mute state be
-        // the single source of truth, so remote tiles show the right mic icon.
-        if(at) at.enabled=true;
+        // Publish the mic already in the chosen state — never enable it first,
+        // or live audio reaches the room for the moment before muting applies.
+        if(at) at.enabled=wantMic;
         if(vt) vt.enabled=true;
         if(at) await room.localParticipant.publishTrack(at,{source:LK.Track.Source.Microphone});
         if(vt) await room.localParticipant.publishTrack(vt,{source:LK.Track.Source.Camera});
-        await room.localParticipant.setMicrophoneEnabled(wantMic).catch(()=>{});
-        await room.localParticipant.setCameraEnabled(wantCam).catch(()=>{});
+        // Mirror the choice into LiveKit's own mute flags: that is what remote
+        // tiles read for the mic icon, and what lets an unmute work later
+        // without re-prompting for the device.
+        if(at) await room.localParticipant.setMicrophoneEnabled(wantMic).catch(()=>{});
+        if(vt) await room.localParticipant.setCameraEnabled(true).catch(()=>{});
         return;
       }catch(e){
         console.warn('reusing pre-join tracks failed, capturing fresh',e);
