@@ -1,13 +1,53 @@
 :root{
+  /* Brand — identical in both themes so the logo never clashes. */
   --blue:#0a4fb4; --blue2:#1560d8; --blue-bright:#1a73e8; --cyan:#00d4ff; --cyan2:#00e5ff;
   --grad:linear-gradient(160deg,#1560d8 0%,#00d4ff 100%);
   --grad-soft:linear-gradient(160deg,#2b7cf0 0%,#22d3ee 100%);
-  --ink:#0d1b2a; --muted:#5a6b82; --line:#e3e9f2;
-  --navy:#0a1424; --navy2:#0f1d33; --navy3:#152540; --navy-line:#1e3253;
+
+  /* ---- DARK (default): dark grey ---- */
+  --bg:#202124;            /* page background */
+  --bg-hi:#2a2c30;         /* radial highlight behind the bg */
+  --surface:#2a2b2e;       /* cards, dock, panel */
+  --surface-2:#35363a;     /* raised: tiles, inputs, hover */
+  --line-c:#3c4043;
+  --ink-c:#e8eaed;
+  --muted-c:#9aa0a6;
+  --chip:rgba(255,255,255,.08);
+  --chip-hi:rgba(255,255,255,.14);
+  --dock-bg:rgba(32,33,36,.86);
+  --panel-bg:rgba(42,43,46,.82);
+  --tile-grad:linear-gradient(150deg,#35363a,#26272a);
+  --shadow-lg:0 16px 40px rgba(0,0,0,.45);
+  --shadow-md:0 8px 24px rgba(0,0,0,.35);
+  --toast-bg:#e8eaed; --toast-ink:#202124;
+
+  /* Aliases: the rest of the sheet is written against these names, so a theme
+     only has to redefine the tokens above. */
+  --ink:var(--ink-c); --muted:var(--muted-c); --line:var(--line-c);
+  --navy:var(--bg); --navy2:var(--surface); --navy3:var(--surface-2); --navy-line:var(--line-c);
+}
+
+/* ---- LIGHT: soft off-white ---- */
+:root[data-theme="light"]{
+  --bg:#f1f3f4;
+  --bg-hi:#ffffff;
+  --surface:#ffffff;
+  --surface-2:#e8eaed;
+  --line-c:#dadce0;
+  --ink-c:#1f2023;
+  --muted-c:#5f6368;
+  --chip:rgba(0,0,0,.055);
+  --chip-hi:rgba(0,0,0,.1);
+  --dock-bg:rgba(255,255,255,.92);
+  --panel-bg:rgba(255,255,255,.9);
+  --tile-grad:linear-gradient(150deg,#e6e9ed,#d8dce1);
+  --shadow-lg:0 16px 40px rgba(60,64,67,.18);
+  --shadow-md:0 8px 24px rgba(60,64,67,.12);
+  --toast-bg:#202124; --toast-ink:#e8eaed;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{font-family:'Plus Jakarta Sans','Inter',system-ui,sans-serif;color:var(--ink);background:#fff;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:'Plus Jakarta Sans','Inter',system-ui,sans-serif;color:var(--ink);background:var(--bg);overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
 input,textarea,select{font-family:inherit}
 .material-symbols-rounded{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;line-height:1;display:inline-block;-webkit-font-feature-settings:'liga';user-select:none}
@@ -20,24 +60,33 @@ input,textarea,select{font-family:inherit}
 .hidden{display:none!important}
 
 /* ---------- brand mark ---------- */
-.vsmark{width:40px;height:40px;border-radius:12px;background:var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 16px rgba(21,96,216,.28)}
-.vsmark span{font-family:'Plus Jakarta Sans';font-weight:800;font-style:italic;color:#fff;font-size:19px;letter-spacing:-1px}
-.vsmark.sm{width:32px;height:32px;border-radius:10px}.vsmark.sm span{font-size:15px}
-.wordmark{font-weight:800;font-size:19px;letter-spacing:-.5px;color:var(--ink)}
+.vsmark{width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.vsmark img{width:100%;height:100%;object-fit:contain;display:block}
+.vsmark.sm{width:32px;height:32px}
+.wordmark{font-weight:800;font-size:19px;letter-spacing:-.5px;color:var(--ink);white-space:nowrap}
 .wordmark b{background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .wordmark .meet{font-weight:600;color:var(--muted)}
 
+/* theme toggle */
+.themebtn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--chip);flex-shrink:0;transition:background .15s,color .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+@media (hover:hover){.themebtn:hover{background:var(--chip-hi);color:var(--ink)}}
+.themebtn .material-symbols-rounded{font-size:20px}
+/* Show the icon for the theme you'd switch TO. */
+.themebtn .t-dark{display:none}
+:root[data-theme="light"] .themebtn .t-dark{display:inline-block}
+:root[data-theme="light"] .themebtn .t-light{display:none}
+
 /* ================= LANDING ================= */
-#landing{background:radial-gradient(1200px 500px at 85% -10%,#e9f3ff 0%,#fff 55%)}
+#landing{background:radial-gradient(1200px 500px at 85% -10%,var(--bg-hi) 0%,var(--bg) 55%)}
 .lp-top{height:72px;display:flex;align-items:center;padding:0 34px;gap:12px;flex-shrink:0}
 .lp-top .sp{flex:1}
 .lp-top .clock{color:var(--muted);font-size:14px;font-weight:500;margin-right:6px}
 .iconbtn{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);transition:background .15s}
-.iconbtn:hover{background:#eef3fb}
-.lp-avatar{width:38px;height:38px;border-radius:50%;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
+.iconbtn:hover{background:var(--surface-2)}
+.lp-avatar{width:38px;height:38px;flex-shrink:0;border-radius:50%;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px}
 .lp-body{flex:1 0 auto;display:flex;align-items:center;justify-content:space-between;max-width:1120px;width:100%;margin:0 auto;padding:0 48px 40px;gap:56px}
 .lp-left{max-width:520px}
-.lp-badge{display:inline-flex;align-items:center;gap:7px;background:#eaf2ff;color:var(--blue);font-weight:600;font-size:12.5px;padding:6px 13px;border-radius:20px;margin-bottom:22px}
+.lp-badge{display:inline-flex;align-items:center;gap:7px;background:var(--chip);color:var(--cyan);font-weight:600;font-size:12.5px;padding:6px 13px;border-radius:20px;margin-bottom:22px}
 .lp-badge .dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 0 3px rgba(0,212,255,.25)}
 .lp-left h1{font-size:52px;line-height:1.08;font-weight:800;letter-spacing:-1.5px}
 .lp-left h1 em{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
@@ -49,31 +98,33 @@ input,textarea,select{font-family:inherit}
 .btn-primary:active{transform:translateY(0)}
 .btn-primary:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none}
 .btn-primary .material-symbols-rounded{font-size:22px}
-.join-field{flex:1;display:flex;align-items:center;height:56px;border:1.5px solid var(--line);border-radius:16px;padding:0 8px 0 18px;gap:10px;background:#fff;transition:border-color .15s}
+.join-field{flex:1;display:flex;align-items:center;height:56px;border:1.5px solid var(--line);border-radius:16px;padding:0 8px 0 18px;gap:10px;background:var(--surface);transition:border-color .15s}
 .join-field:focus-within{border-color:var(--blue-bright)}
 .join-field .material-symbols-rounded{color:var(--muted);font-size:22px}
 .join-field input{border:none;outline:none;font-size:15px;height:100%;width:100%;background:transparent;font-weight:500}
 .btn-ghost{color:var(--blue);font-weight:700;font-size:15px;padding:0 16px;border-radius:12px}
-.btn-ghost:hover{background:#eef4ff}.btn-ghost:disabled{color:#9fb0c7;cursor:default}
+.btn-ghost:hover{background:var(--surface-2)}.btn-ghost:disabled{color:var(--muted);cursor:default}
 .lp-note{font-size:13px;color:var(--muted);font-family:'Inter';margin-top:4px}
 /* "your meeting is still running" — shown when a host left without ending */
-.rejoin{display:flex;align-items:center;gap:13px;background:#eaf7ef;border:1.5px solid #b7e3c8;border-radius:16px;padding:13px 14px}
+.rejoin{display:flex;align-items:center;gap:13px;background:rgba(31,157,85,.13);border:1.5px solid rgba(31,157,85,.4);border-radius:16px;padding:13px 14px}
 .rejoin .rj-ico{color:#1f9d55;font-size:22px;flex-shrink:0}
 .rejoin .rj-txt{display:flex;flex-direction:column;min-width:0;flex:1}
-.rejoin .rj-txt b{font-size:14px;font-weight:700;color:#14603a}
-.rejoin .rj-txt span{font-size:12.5px;color:#4a7c60;font-family:'Inter';overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rejoin .rj-txt b{font-size:14px;font-weight:700;color:var(--ink)}
+.rejoin .rj-txt span{font-size:12.5px;color:var(--muted);font-family:'Inter';overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rejoin .rj-btn{background:#1f9d55;color:#fff;font-weight:700;font-size:13.5px;padding:9px 18px;border-radius:11px;flex-shrink:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 @media (hover:hover){.rejoin .rj-btn:hover{background:#188446}}
 .rejoin .rj-btn:disabled{opacity:.6;cursor:default}
 .lp-right{flex-shrink:0}
 .hero{width:420px;height:420px}
-.lp-foot{padding:0 34px 20px;color:#9fb0c7;font-size:12.5px;font-family:'Inter';text-align:center}
+/* the illustration's backdrop follows the theme instead of staying pale blue */
+.hero-bg{fill:var(--surface-2)}
+.lp-foot{padding:0 34px 20px;color:var(--muted);font-size:12.5px;font-family:'Inter';text-align:center}
 
 /* ================= AUTH / SETUP CARDS ================= */
-.cardscreen{background:radial-gradient(1000px 460px at 50% -10%,#e9f3ff 0%,#fff 60%);align-items:center;justify-content:flex-start}
+.cardscreen{background:radial-gradient(1000px 460px at 50% -10%,var(--bg-hi) 0%,var(--bg) 60%);align-items:center;justify-content:flex-start}
 /* margin:auto vertically centres the card when it fits, but yields to the top
    (stays fully scrollable) when it's taller than the viewport. */
-.card{width:440px;max-width:92vw;margin:auto;flex-shrink:0;background:#fff;border:1px solid var(--line);border-radius:24px;padding:36px 34px;box-shadow:0 24px 60px rgba(13,27,42,.10)}
+.card{width:440px;max-width:92vw;margin:auto;flex-shrink:0;background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:36px 34px;box-shadow:0 24px 60px rgba(13,27,42,.10)}
 .card .brandrow{display:flex;align-items:center;gap:11px;margin-bottom:24px}
 .card h2{font-size:24px;font-weight:800;letter-spacing:-.6px}
 .card .csub{color:var(--muted);font-size:14.5px;margin-top:6px;font-family:'Inter';line-height:1.5}
@@ -85,12 +136,12 @@ input,textarea,select{font-family:inherit}
 .card .back{margin-top:16px;text-align:center}
 .card .back button{color:var(--muted);font-weight:600;font-size:14px}
 .card .back button:hover{color:var(--blue)}
-.err{background:#fff1f0;color:#c5361b;border:1px solid #ffd7d1;border-radius:12px;padding:11px 14px;font-size:13.5px;font-family:'Inter';margin-top:16px;display:none}
+.err{background:rgba(234,75,90,.12);color:#ff8593;border:1px solid rgba(234,75,90,.35);border-radius:12px;padding:11px 14px;font-size:13.5px;font-family:'Inter';margin-top:16px;display:none}
 .err.show{display:block}
-.formhint{font-size:12.5px;color:#9fb0c7;font-family:'Inter';margin-top:8px}
+.formhint{font-size:12.5px;color:var(--muted);font-family:'Inter';margin-top:8px}
 
 /* ================= PRE-JOIN ================= */
-#prejoin{background:radial-gradient(1000px 500px at 50% -10%,#e9f3ff 0%,#fff 60%)}
+#prejoin{background:radial-gradient(1000px 500px at 50% -10%,var(--bg-hi) 0%,var(--bg) 60%)}
 .pj-top{height:72px;display:flex;align-items:center;padding:0 34px;gap:12px;flex-shrink:0}
 .pj-body{flex:1 0 auto;display:flex;align-items:center;justify-content:center;gap:54px;padding:0 40px 48px;flex-wrap:wrap}
 .pj-preview{position:relative;width:100%;max-width:640px;aspect-ratio:16/9;background:var(--navy);border-radius:22px;overflow:hidden;box-shadow:0 24px 60px rgba(13,27,42,.18)}
@@ -115,29 +166,57 @@ input,textarea,select{font-family:inherit}
 .pj-right .pj-hint{color:var(--muted);font-size:13px;margin-top:14px;font-family:'Inter'}
 
 /* ================= MEETING ================= */
-#meeting{background:radial-gradient(1200px 700px at 50% -20%,#12294d 0%,var(--navy) 60%);color:#eaf1ff}
+#meeting{background:radial-gradient(1200px 700px at 50% -20%,var(--bg-hi) 0%,var(--bg) 60%);color:var(--ink)}
 .mt-top{height:60px;flex-shrink:0;display:flex;align-items:center;gap:14px;padding:0 20px}
-.mt-top .title{font-weight:700;font-size:15.5px;letter-spacing:-.3px}
+.mt-top .title{font-weight:700;font-size:15.5px;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .mt-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#8affce;background:rgba(24,200,120,.12);padding:4px 10px;border-radius:20px}
 .mt-live .d{width:7px;height:7px;border-radius:50%;background:#25d97a;box-shadow:0 0 0 3px rgba(37,217,122,.25);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .mt-top .sp{flex:1}
-.codechip{display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border:1px solid var(--navy-line);padding:7px 8px 7px 14px;border-radius:12px;font-size:13.5px;font-weight:600;color:#cfe0f7}
+.codechip{display:inline-flex;align-items:center;gap:9px;background:var(--chip);border:1px solid var(--line);padding:7px 8px 7px 14px;border-radius:12px;font-size:13.5px;font-weight:600;color:var(--ink)}
 .codechip .material-symbols-rounded{font-size:18px}
 .codechip #mtCode{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
-.codechip button{width:30px;height:30px;border-radius:8px;color:#9fb8db;display:flex;align-items:center;justify-content:center}
+.codechip button{width:30px;height:30px;border-radius:8px;color:var(--muted);display:flex;align-items:center;justify-content:center}
 .codechip button:hover{background:rgba(255,255,255,.08);color:#fff}
 
 .mt-stage{flex:1;display:flex;min-height:0;position:relative;padding:0 8px}
 .mt-gridwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px 100px;min-width:0}
-.mt-grid{display:grid;gap:12px;width:100%;height:100%;align-content:center;justify-items:center}
-.tile{position:relative;width:100%;height:auto;max-width:min(100%,860px);aspect-ratio:16/9;max-height:100%;background:linear-gradient(150deg,var(--navy3),var(--navy2));border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.mt-grid{display:grid;gap:14px;width:100%;height:100%;align-content:center;justify-items:center;align-items:center}
+.tile{position:relative;width:100%;height:auto;max-width:min(100%,860px);aspect-ratio:16/9;max-height:100%;background:var(--tile-grad);border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 .tile::after{content:'';position:absolute;inset:0;border-radius:20px;border:2.5px solid transparent;pointer-events:none;transition:border-color .15s}
 .tile.speaking::after{border-color:var(--cyan);box-shadow:inset 0 0 24px rgba(0,212,255,.18)}
 .tile video{width:100%;height:100%;object-fit:cover}
 .tile.local video{transform:scaleX(-1)}
 .tile.screen video{object-fit:contain;background:#000}
-.tile .tav{width:92px;height:92px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:36px;color:#fff;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.3)}
+/* Avatar colour is assigned per participant in JS (--av-bg / --av-ink), hashed
+   from their identity so it stays the same for everyone looking at them. */
+.tile .tav{width:92px;height:92px;border-radius:50%;background:var(--av-bg,var(--grad));color:var(--av-ink,#fff);display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.3)}
+
+/* ---- pinned (spotlight) layout ----
+   Desktop: spotlight fills the left, everyone else stacks in a scrollable
+   filmstrip on the right, each keeping 16:9 instead of being stretched.
+   Phones: spotlight on top, filmstrip scrolls horizontally underneath. */
+.mt-grid.pinned{display:flex;gap:12px;height:100%;width:100%;align-content:stretch;
+  /* stretch, not centre: the filmstrip must fill the cross axis so it can
+     scroll its overflow instead of being centred and clipped at both ends. */
+  align-items:stretch}
+.mt-grid.pinned .tile.pin{flex:1 1 auto;min-width:0;width:100%;height:auto;max-width:100%;max-height:100%;aspect-ratio:var(--pin-ar,16/9);align-self:center;margin:auto}
+.filmstrip{flex:0 0 258px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;overflow-x:hidden;padding-right:2px;scrollbar-width:thin;justify-content:safe center}
+.filmstrip::-webkit-scrollbar{width:6px}
+.filmstrip::-webkit-scrollbar-thumb{background:var(--chip-hi);border-radius:6px}
+.filmstrip .tile{flex:0 0 auto;width:100%;height:auto;aspect-ratio:4/3;max-width:none;min-height:0;border-radius:14px}
+.filmstrip .tile .tav{width:52px;height:52px;font-size:20px}
+.filmstrip .tile .tname{font-size:11px;padding:3px 8px;top:7px;right:7px}
+/* Portrait spotlight, wide screens only: it needs just ~9:16 of the height, so
+   centre the pair and run the filmstrip two-up instead of stranding empty space
+   beside it. Phones stack (spotlight above, strip below) and must not inherit
+   this side-by-side sizing, which would collapse the spotlight to a thumbnail. */
+@media (min-width:601px){
+  .mt-grid.pinned.pin-portrait{justify-content:center}
+  .mt-grid.pinned.pin-portrait .tile.pin{flex:0 1 auto;width:auto;height:100%;max-width:56%;margin:0}
+  .mt-grid.pinned.pin-portrait .filmstrip{flex:0 0 428px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
+  .mt-grid.pinned.pin-portrait .filmstrip .tile{width:100%}
+}
 .tile .tname{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:7px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);padding:5px 11px;border-radius:11px;font-size:13px;font-weight:600;max-width:calc(100% - 24px)}
 .tile .tname .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile .tname .material-symbols-rounded{font-size:16px;color:#ff6b7a}
@@ -149,34 +228,34 @@ input,textarea,select{font-family:inherit}
 .tile .tpin{position:absolute;top:12px;left:12px;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:rgba(0,212,255,.9);color:#04263a}
 .tile .tpin .material-symbols-rounded{font-size:17px}
 .tile .thand.show ~ .tpin{left:50px}
-.tile .tmore{position:absolute;bottom:10px;right:10px;width:34px;height:34px;border-radius:11px;background:rgba(6,14,28,.62);backdrop-filter:blur(8px);color:#eaf1ff;display:flex;align-items:center;justify-content:center;opacity:.85;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.tile .tmore{position:absolute;bottom:10px;right:10px;width:34px;height:34px;border-radius:11px;background:rgba(6,14,28,.62);backdrop-filter:blur(8px);color:var(--ink);display:flex;align-items:center;justify-content:center;opacity:.85;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .tile .tmore .material-symbols-rounded{font-size:20px}
 @media (hover:hover){.tile .tmore:hover{background:rgba(6,14,28,.85);opacity:1}}
 
 /* participant options menu (host) */
-#tileMenu{position:fixed;z-index:60;min-width:224px;max-width:280px;background:rgba(10,20,38,.96);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:14px;padding:6px;display:none;flex-direction:column;gap:2px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
+#tileMenu{position:fixed;z-index:60;min-width:224px;max-width:280px;background:var(--dock-bg);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:14px;padding:6px;display:none;flex-direction:column;gap:2px;box-shadow:0 18px 44px rgba(0,0,0,.5)}
 #tileMenu.open{display:flex}
 #tileMenu .tm-head{font-size:11px;color:#7f97bd;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#tileMenu button{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;font-size:13.5px;font-weight:600;color:#eaf1ff;text-align:left;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-#tileMenu button .material-symbols-rounded{font-size:19px;color:#9fb8db}
+#tileMenu button{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;font-size:13.5px;font-weight:600;color:var(--ink);text-align:left;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#tileMenu button .material-symbols-rounded{font-size:19px;color:var(--muted)}
 #tileMenu button.danger{color:#ff8593}
 #tileMenu button.danger .material-symbols-rounded{color:#ff6b7a}
-@media (hover:hover){#tileMenu button:hover{background:rgba(255,255,255,.07)}#tileMenu button.danger:hover{background:rgba(234,75,90,.14)}}
+@media (hover:hover){#tileMenu button:hover{background:var(--chip)}#tileMenu button.danger:hover{background:rgba(234,75,90,.14)}}
 .tile .thand.show{display:flex}
 
 /* side panel — dark glass */
-.mt-panel{width:352px;flex-shrink:0;background:rgba(12,24,44,.72);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:20px;margin:4px 4px 96px 0;display:none;flex-direction:column;overflow:hidden}
+.mt-panel{width:352px;flex-shrink:0;background:var(--panel-bg);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:20px;margin:4px 4px 96px 0;display:none;flex-direction:column;overflow:hidden}
 .mt-panel.open{display:flex}
 .pnl-head{display:flex;align-items:center;justify-content:space-between;padding:18px 12px 16px 20px;flex-shrink:0;border-bottom:1px solid var(--navy-line)}
 .pnl-head h3{font-size:17px;font-weight:700;letter-spacing:-.3px}
-.pnl-x{width:38px;height:38px;border-radius:50%;color:#9fb8db;display:flex;align-items:center;justify-content:center}
+.pnl-x{width:38px;height:38px;border-radius:50%;color:var(--muted);display:flex;align-items:center;justify-content:center}
 .pnl-x:hover{background:rgba(255,255,255,.07);color:#fff}
 .pnl-body{flex:1;overflow-y:auto;padding:10px}
 .pnl-body::-webkit-scrollbar{width:8px}.pnl-body::-webkit-scrollbar-thumb{background:#24406b;border-radius:8px}
 .person{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:12px}
-.person:hover{background:rgba(255,255,255,.04)}
-.person .pav{width:38px;height:38px;border-radius:50%;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
-.person .pnm{flex:1;font-size:14px;font-weight:600;color:#eaf1ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person:hover{background:var(--chip)}
+.person .pav{width:38px;height:38px;border-radius:50%;background:var(--av-bg,var(--grad));color:var(--av-ink,#fff);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.person .pnm{flex:1;font-size:14px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .person .pstat{display:flex;align-items:center;gap:7px;color:#7f97bd}
 .person .pstat .material-symbols-rounded{font-size:19px}
 .person .pstat .muted{color:#ff6b7a}
@@ -184,23 +263,23 @@ input,textarea,select{font-family:inherit}
 .psec{font-size:11.5px;font-weight:700;color:#7f97bd;text-transform:uppercase;letter-spacing:.6px;padding:12px 10px 6px}
 .chat-msgs{display:flex;flex-direction:column;gap:15px;padding:8px 8px}
 .cm .cmh{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
-.cm .cmn{font-size:13.5px;font-weight:700;color:#cfe0f7}
+.cm .cmn{font-size:13.5px;font-weight:700;color:var(--ink)}
 .cm .cmt{font-size:10.5px;color:#7f97bd}
 .cm .cmx{font-size:13.5px;color:#dbe7fa;font-family:'Inter';line-height:1.45;white-space:pre-wrap;word-wrap:break-word}
 .cm.mine .cmn{color:#7cd7ff}
 .chat-empty{color:#7f97bd;font-size:12.5px;text-align:center;padding:28px 18px;font-family:'Inter';line-height:1.5}
 .chat-bar{flex-shrink:0;padding:12px;display:flex;align-items:flex-end;gap:8px;border-top:1px solid var(--navy-line)}
 .chat-box{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--navy-line);border-radius:16px;display:flex;align-items:center;padding:2px 4px 2px 14px}
-.chat-box textarea{flex:1;border:none;outline:none;background:transparent;resize:none;font-size:14px;font-family:'Inter';color:#eaf1ff;padding:11px 0;max-height:90px;line-height:1.35}
+.chat-box textarea{flex:1;border:none;outline:none;background:transparent;resize:none;font-size:14px;font-family:'Inter';color:var(--ink);padding:11px 0;max-height:90px;line-height:1.35}
 .chat-box textarea::placeholder{color:#7f97bd}
 .chat-send{width:40px;height:40px;border-radius:12px;background:var(--grad);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .chat-send:disabled{background:#24406b;color:#5c77a0;cursor:default}
 
 /* control dock — floating pill */
-.mt-dock{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(10,20,38,.82);backdrop-filter:blur(20px);border:1px solid var(--navy-line);padding:10px 14px;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:30}
-.dbtn{width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.07);color:#eaf1ff;display:flex;align-items:center;justify-content:center;transition:background .14s,transform .1s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.mt-dock{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--dock-bg);backdrop-filter:blur(20px);border:1px solid var(--navy-line);padding:10px 14px;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:30}
+.dbtn{width:52px;height:52px;border-radius:16px;background:var(--chip);color:var(--ink);display:flex;align-items:center;justify-content:center;transition:background .14s,transform .1s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .dbtn *{pointer-events:none}
-@media (hover:hover){.dbtn:hover{background:rgba(255,255,255,.14)}}
+@media (hover:hover){.dbtn:hover{background:var(--chip-hi)}}
 .dbtn:active{transform:scale(.95)}
 .dbtn.off{background:#ea4b5a;color:#fff}
 .dbtn.accent{background:var(--grad);color:#fff}
@@ -213,16 +292,16 @@ input,textarea,select{font-family:inherit}
 .dbtn .cnt.red{background:#ff6b7a;color:#fff}
 
 /* reactions popover */
-#reactBar{position:absolute;bottom:84px;left:50%;transform:translateX(-50%);background:rgba(10,20,38,.92);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:20px;padding:10px 14px;display:none;gap:6px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:31}
+#reactBar{position:absolute;bottom:84px;left:50%;transform:translateX(-50%);background:var(--dock-bg);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:20px;padding:10px 14px;display:none;gap:6px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:31}
 #reactBar.open{display:flex}
 #reactBar button{font-size:26px;width:46px;height:46px;border-radius:14px;transition:transform .1s,background .1s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-@media (hover:hover){#reactBar button:hover{background:rgba(255,255,255,.1);transform:scale(1.18)}}
+@media (hover:hover){#reactBar button:hover{background:var(--chip-hi);transform:scale(1.18)}}
 /* leave menu */
-#leaveMenu{position:absolute;bottom:84px;left:50%;transform:translateX(-50%);background:rgba(10,20,38,.94);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:18px;padding:8px;display:none;flex-direction:column;gap:4px;box-shadow:0 16px 40px rgba(0,0,0,.45);z-index:31;min-width:280px}
+#leaveMenu{position:absolute;bottom:84px;left:50%;transform:translateX(-50%);background:var(--dock-bg);backdrop-filter:blur(18px);border:1px solid var(--navy-line);border-radius:18px;padding:8px;display:none;flex-direction:column;gap:4px;box-shadow:0 16px 40px rgba(0,0,0,.45);z-index:31;min-width:280px}
 #leaveMenu.open{display:flex}
-#leaveMenu button{display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:12px;text-align:left;color:#eaf1ff;transition:background .12s}
-@media (hover:hover){#leaveMenu button:hover{background:rgba(255,255,255,.07)}}
-#leaveMenu button .material-symbols-rounded{font-size:22px;color:#9fb8db}
+#leaveMenu button{display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:12px;text-align:left;color:var(--ink);transition:background .12s}
+@media (hover:hover){#leaveMenu button:hover{background:var(--chip)}}
+#leaveMenu button .material-symbols-rounded{font-size:22px;color:var(--muted)}
 #leaveMenu button.danger .material-symbols-rounded{color:#ff6b7a}
 #leaveMenu button.danger:hover{background:rgba(234,75,90,.14)}
 #leaveMenu .lm-txt{display:flex;flex-direction:column}
@@ -235,7 +314,7 @@ input,textarea,select{font-family:inherit}
 /* share modal / toast */
 .modalback{position:fixed;inset:0;background:rgba(8,16,30,.55);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:200}
 .modalback.open{display:flex}
-.sharecard{background:#fff;color:var(--ink);border-radius:24px;width:460px;max-width:92vw;padding:32px 30px;box-shadow:0 30px 70px rgba(0,0,0,.35);text-align:center}
+.sharecard{background:var(--surface);color:var(--ink);border-radius:24px;width:460px;max-width:92vw;padding:32px 30px;box-shadow:0 30px 70px rgba(0,0,0,.35);text-align:center}
 .sharecard .ok{width:66px;height:66px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;box-shadow:0 12px 28px rgba(21,96,216,.32)}
 .sharecard .ok .material-symbols-rounded{font-size:36px;color:#fff}
 .sharecard h2{font-size:23px;font-weight:800;letter-spacing:-.5px}
@@ -246,7 +325,7 @@ input,textarea,select{font-family:inherit}
 .sharecard .codebig{margin-top:16px;font-size:13px;color:var(--muted);font-family:'Inter'}
 .sharecard .codebig b{color:var(--ink);font-family:'Plus Jakarta Sans';letter-spacing:1px}
 .sharecard .enter{margin-top:24px;width:100%}
-#toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#0d1b2a;color:#eaf1ff;padding:13px 20px;border-radius:14px;font-size:14px;font-weight:500;font-family:'Inter';box-shadow:0 14px 34px rgba(0,0,0,.35);display:none;z-index:300;max-width:90vw}
+#toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);padding:13px 20px;border-radius:14px;font-size:14px;font-weight:500;font-family:'Inter';box-shadow:0 14px 34px rgba(0,0,0,.35);display:none;z-index:300;max-width:90vw}
 #toast.show{display:block}
 
 /* env chip */
@@ -261,6 +340,27 @@ input,textarea,select{font-family:inherit}
 
 /* ---------- phones ---------- */
 @media (max-width:600px){
+  /* ---- landing ---- */
+  .lp-top{height:60px;padding:0 16px;gap:10px}
+  .lp-top .clock{display:none}          /* the date string ate three lines */
+  .vsmark{width:34px;height:34px}
+  .wordmark{font-size:16px}
+  .lp-body{padding:0 18px 26px}
+  .lp-left h1{font-size:30px;letter-spacing:-.8px}
+  .lp-left .sub{font-size:14.5px;margin-top:14px;line-height:1.5}
+  .lp-badge{font-size:11.5px;padding:5px 11px;margin-bottom:16px}
+  .lp-actions{margin-top:22px;gap:11px;max-width:none}
+  .btn-primary{height:52px;font-size:15px}
+  .join-field{height:52px}
+  .lp-note{font-size:12.5px}
+  .lp-foot{font-size:11.5px;padding:0 18px 16px}
+  .rejoin{padding:11px 12px;gap:10px}
+  .rejoin .rj-btn{padding:8px 14px;font-size:12.5px}
+  /* ---- cards (sign-in / setup / not-live) ---- */
+  .card{padding:26px 20px;border-radius:20px}
+  .card h2{font-size:21px}
+  .card .csub{font-size:13.5px}
+
   /* meeting top bar */
   .mt-top{height:52px;padding:0 12px;gap:8px}
   .mt-top .title{font-size:14px}
@@ -280,8 +380,15 @@ input,textarea,select{font-family:inherit}
   .tile{aspect-ratio:16/10;max-width:none;height:auto;min-height:150px;border-radius:16px}
   /* Spotlight mode sizes tiles from the grid rows, so drop the fixed shape and
      the scrolling strip — the pinned view is meant to fit one screen. */
-  .mt-grid.pinned{margin:0;height:100%}
-  .mt-grid.pinned .tile{aspect-ratio:auto;height:100%;min-height:0}
+  /* Phone: a 232px side strip would leave the spotlight too narrow, so the
+     filmstrip goes underneath and scrolls sideways instead. */
+  .mt-grid.pinned{margin:0;height:100%;flex-direction:column;justify-content:center}
+  /* margin:0 — the desktop rule centres the spotlight with auto margins, which
+     here would absorb the free space and shove the filmstrip to the bottom. */
+  .mt-grid.pinned .tile.pin{flex:0 1 auto;width:100%;height:auto;min-height:0;max-height:100%;margin:0;aspect-ratio:var(--pin-ar,16/9)}
+  .filmstrip{flex:0 0 auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:8px;padding-bottom:2px;justify-content:flex-start}
+  .filmstrip .tile{flex:0 0 128px;width:128px}
+  .filmstrip .tile .tav{width:40px;height:40px;font-size:16px}
   .tile .tmore{bottom:8px;right:8px;width:30px;height:30px;border-radius:9px}
   .tile .tmore .material-symbols-rounded{font-size:18px}
   .tile .tav{width:64px;height:64px;font-size:26px}

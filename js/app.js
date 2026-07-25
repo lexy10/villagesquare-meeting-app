@@ -14,6 +14,49 @@ const chatLog=[]; const handsUp=new Set(); const speaking=new Set();
 let pjStream=null, pjCamOn=true, pjMicOn=true, pendingRoom='';
 let pendingRejoin=false;   // set when sign-in was triggered from the rejoin banner
 
+// ---------- theme ----------
+const THEME_KEY='vsm_theme';
+function currentTheme(){ return document.documentElement.getAttribute('data-theme')==='light'?'light':'dark'; }
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t==='light'?'light':'dark');
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute('content', t==='light'?'#f1f3f4':'#202124');
+}
+function toggleTheme(){
+  const next=currentTheme()==='light'?'dark':'light';
+  try{ localStorage.setItem(THEME_KEY,next); }catch{}
+  applyTheme(next);
+  // Avatar colours are mixed per theme, so re-render anything showing them.
+  if(room){ renderGrid(); renderPeople(); }
+}
+// Applied before first paint (see the inline bootstrap in index.html); this
+// re-applies for the saved/system value once the app script loads.
+(function(){
+  let saved=null; try{ saved=localStorage.getItem(THEME_KEY); }catch{}
+  applyTheme(saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light':'dark'));
+})();
+
+// ---------- participant colours ----------
+// Each participant gets a stable hue derived from their identity, so the same
+// person is the same colour for everyone in the room (like Meet). Saturation
+// and lightness are chosen per theme so it always reads against the background.
+// Curated hue/saturation pairs rather than evenly-spaced hues: equal steps put
+// several near-identical golds and greens next to each other, so neighbouring
+// entries here are deliberately far apart in both hue and intensity.
+const AV_COLORS=[
+  [354,62],[ 22,72],[ 45,78],[ 96,42],[152,44],[174,52],[190,64],
+  [212,58],[236,52],[264,44],[292,42],[322,52],[ 18,26],[206,18],
+];
+// FNV-1a: short ids like "g1"/"g2" collide into neighbouring buckets with a
+// simple *31 hash, which is exactly when the colours look repetitive.
+function hashOf(s){ s=String(s||'?'); let h=0x811c9dc5; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
+function avatarStyle(identity){
+  const [h,s]=AV_COLORS[hashOf(identity)%AV_COLORS.length];
+  return currentTheme()==='light'
+    ? `--av-bg:hsl(${h} ${s}% 72%);--av-ink:hsl(${h} ${Math.min(s+10,90)}% 15%)`
+    : `--av-bg:hsl(${h} ${s}% 42%);--av-ink:#fff`;
+}
+
 // ---------- helpers ----------
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
 function initials(n){ n=(n||'').trim(); if(!n)return '?'; const p=n.split(/\s+/); return (p[0][0]+(p[1]?p[1][0]:'')).toUpperCase(); }
@@ -261,6 +304,9 @@ async function connectRoom(token, displayName, title, seedStream){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
   ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
+  // Mirror server-side (host) mutes into our own control state.
+  ['TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
+    .forEach(ev=>room.on(LK.RoomEvent[ev],(_a,p)=>{ if(!p||p===room.localParticipant) syncLocalMediaState(); }));
   room.on(LK.RoomEvent.ParticipantConnected,p=>{chime('join');toast((p.name||p.identity)+' joined');
     // Someone who arrives after a pin was set would otherwise see no spotlight.
     if(myRole==='host'&&pinned) setTimeout(()=>publish({t:'pin',identity:pinned}),600);});
@@ -308,13 +354,13 @@ function renderGrid(){
   const hasPin = pinIdx>=0;
   if(hasPin) ps.unshift(ps.splice(pinIdx,1)[0]);
   const n=ps.length;
-  let c;
+  let c, centred=false, rowCount=1;
   grid.classList.toggle('pinned',hasPin);
+  if(!hasPin) grid.classList.remove('pin-portrait');
   if(hasPin){
-    const others=n-1;
-    c=Math.max(1,Math.min(others,phone?3:6));
-    grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
-    grid.style.gridTemplateRows=others>0?'minmax(0,3fr) minmax(0,1fr)':'1fr';
+    // Layout is flexbox in CSS (spotlight + filmstrip), so clear any grid
+    // template left over from the un-pinned view.
+    grid.style.gridTemplateColumns=''; grid.style.gridTemplateRows='';
     grid.style.height='100%'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
   }else{
     c=cols(n); const r=Math.ceil(n/c);
@@ -325,23 +371,50 @@ function renderGrid(){
       grid.style.gridTemplateRows=`repeat(${r},auto)`;
       grid.style.height='auto'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
     }else{
+      // Twice as many columns as tiles, each tile spanning two: a row with
+      // fewer tiles than the rest can then start on a half-column and sit
+      // centred (5 people = 3 up, 2 centred underneath) instead of hugging
+      // the left with a hole on the right.
+      grid.style.gridTemplateColumns=`repeat(${c*2},1fr)`;
       grid.style.gridTemplateRows=`repeat(${r},1fr)`;
       grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
+      centred=true; rowCount=r;
     }
   }
+  // Everyone except the spotlight goes into a scrollable filmstrip.
+  const strip = hasPin ? document.createElement('div') : null;
+  if(strip) strip.className='filmstrip';
   ps.forEach((p,i)=>{
     const local=p===room.localParticipant;
     const isPinned=hasPin&&i===0;
     const tile=document.createElement('div'); tile.className='tile'+(local?' local':'')+(speaking.has(p.identity)?' speaking':'')+(isPinned?' pin':''); tile.dataset.id=p.identity;
-    if(isPinned) tile.style.gridColumn='1 / -1';
-    // Odd-count top tile spans the full row — but not when stacking (c===1),
-    // where every tile already spans the only column.
-    else if(!hasPin&&n===3&&i===0&&c>1)tile.style.gridColumn='1 / -1';
+    if(centred){
+      const row=Math.floor(i/c), inRow=i%c;
+      const isLastRow=row===rowCount-1;
+      const inThisRow=isLastRow ? n-(rowCount-1)*c : c;   // tiles sharing this row
+      tile.style.gridColumn=`${(c-inThisRow)+1+2*inRow} / span 2`;
+    }
     const scr=p.getTrackPublication(LK.Track.Source.ScreenShare), cam=p.getTrackPublication(LK.Track.Source.Camera);
     let vt=null,isScr=false;
     if(scr&&scr.track&&!scr.isMuted){vt=scr.track;isScr=true;} else if(cam&&cam.track&&!cam.isMuted){vt=cam.track;}
-    if(vt){ const v=vt.attach(); v.autoplay=true;v.playsInline=true;v.muted=true; if(isScr){tile.classList.add('screen');tile.classList.remove('local');} tile.appendChild(v); }
-    else { const a=document.createElement('div');a.className='tav';a.textContent=initials(p.name||p.identity);tile.appendChild(a); }
+    if(vt){ const v=vt.attach(); v.autoplay=true;v.playsInline=true;v.muted=true; if(isScr){tile.classList.add('screen');tile.classList.remove('local');} tile.appendChild(v);
+      // Shape the spotlight to whatever the sender is actually publishing, so a
+      // phone in portrait doesn't get letterboxed into a landscape box (and a
+      // desktop share doesn't get a tall one). Publication dimensions are known
+      // up front for remote tracks; the video element is the fallback and the
+      // correction if the sender rotates mid-call.
+      if(isPinned){
+        // Portrait spotlights are narrow, which frees a lot of width — the grid
+        // gets a class so the filmstrip can widen into two columns instead of
+        // leaving a dead band down the middle.
+        const setAR=(w,h)=>{ if(w&&h){ tile.style.setProperty('--pin-ar', w+'/'+h); grid.classList.toggle('pin-portrait', h>w); } };
+        const dim=(isScr?scr:cam)&&(isScr?scr:cam).dimensions;
+        if(dim) setAR(dim.width,dim.height);
+        v.addEventListener('loadedmetadata',()=>setAR(v.videoWidth,v.videoHeight));
+        v.addEventListener('resize',()=>setAR(v.videoWidth,v.videoHeight));
+      }
+    }
+    else { const a=document.createElement('div');a.className='tav';a.style.cssText=avatarStyle(p.identity);a.textContent=initials(p.name||p.identity);tile.appendChild(a); }
     const hand=document.createElement('div');hand.className='thand'+(handsUp.has(p.identity)?' show':'');hand.textContent='✋';tile.appendChild(hand);
     const mic=p.getTrackPublication(LK.Track.Source.Microphone); const muted=!mic||!mic.track||mic.isMuted;
     const label=document.createElement('div');label.className='tname';
@@ -356,8 +429,9 @@ function renderGrid(){
       mb.onclick=(ev)=>{ ev.stopPropagation(); openTileMenu(p.identity, p.name||p.identity, local, ev.currentTarget); };
       tile.appendChild(mb);
     }
-    grid.appendChild(tile);
+    (isPinned||!strip ? grid : strip).appendChild(tile);
   });
+  if(strip&&strip.children.length) grid.appendChild(strip);
   document.getElementById('peopleCnt').textContent=n;
 }
 function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('speaking',speaking.has(t.dataset.id))); }
@@ -444,16 +518,52 @@ async function toggleMic(){
     toast(deviceError(e,'Microphone',next),4000);
   }finally{ micBusy=false; updateDock(); renderGrid(); }
 }
+// Turning the camera off releases the device outright rather than just muting
+// the track. Muting leaves the capture open, which is why the browser's camera
+// indicator stayed lit — "off" should mean the camera is genuinely not running.
+// (The mic is deliberately only muted, never stopped: re-acquiring audio is what
+// iOS refuses to re-prompt for, and a muted mic lights no indicator anyway.)
+async function releaseCamera(){
+  const pub=room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+  if(pub&&pub.track){ await room.localParticipant.unpublishTrack(pub.track,true); }
+  else{ await room.localParticipant.setCameraEnabled(false); }
+}
 async function toggleCam(){
   if(!room||camBusy)return;
   camBusy=true; const next=!camOn;
   try{
-    await room.localParticipant.setCameraEnabled(next);
+    if(next) await room.localParticipant.setCameraEnabled(true);
+    else await releaseCamera();
     camOn=next;
   }catch(e){
     console.warn('cam toggle failed',e);
     toast(deviceError(e,'Camera',next),4000);
   }finally{ camBusy=false; updateDock(); renderGrid(); }
+}
+
+// Keep the dock honest about what the tracks are actually doing. Without this a
+// host-side force-mute changed the real track but not our local flag, so the
+// button still read "on" and the next tap muted an already-muted mic — the user
+// had to press twice to get sound back.
+async function syncLocalMediaState(){
+  if(!room||!room.localParticipant)return;
+  const lp=room.localParticipant;
+  const mic=lp.getTrackPublication(LK.Track.Source.Microphone);
+  const cam=lp.getTrackPublication(LK.Track.Source.Camera);
+  const nextMic=!!(mic&&mic.track&&!mic.isMuted);
+  const nextCam=!!(cam&&cam.track&&!cam.isMuted);
+  if(nextMic===micOn&&nextCam===camOn)return;
+
+  // Camera muted from outside (host paused this person's video): drop the
+  // capture too, so "paused" frees the camera instead of just freezing it.
+  if(!nextCam&&camOn&&!camBusy&&cam&&cam.track&&cam.isMuted){
+    try{ await releaseCamera(); }catch(e){ console.warn('release on remote pause failed',e); }
+  }
+  if(!nextMic&&micOn&&!micBusy){ toast('You were muted by the host',3200); }
+  if(!nextCam&&camOn&&!camBusy){ toast('Your video was paused by the host',3200); }
+
+  micOn=nextMic; camOn=nextCam;
+  updateDock(); renderGrid(); renderPeople();
 }
 async function toggleShare(){ if(!room)return; try{ sharing=!sharing; await room.localParticipant.setScreenShareEnabled(sharing); updateDock(); }catch{ sharing=false; updateDock(); toast('Screen share cancelled'); } }
 function toggleHand(){ if(!room)return; handRaised=!handRaised; if(handRaised)handsUp.add(room.localParticipant.identity); else handsUp.delete(room.localParticipant.identity); publish({t:'hand',raised:handRaised,name:room.localParticipant.name}); updateDock(); renderGrid(); renderPeople(); toast(handRaised?'You raised your hand ✋':'Hand lowered'); }
@@ -486,7 +596,7 @@ function closePanel(){ document.getElementById('panel').classList.remove('open')
 function renderPeople(){ if(!room)return; const ps=parts(); let h=`<div class="psec">In the room · ${ps.length}</div>`;
   ps.forEach(p=>{ const local=p===room.localParticipant; const mic=p.getTrackPublication(LK.Track.Source.Microphone); const muted=!mic||!mic.track||mic.isMuted;
     const hand=handsUp.has(p.identity)?'<span class="material-symbols-rounded hand">front_hand</span>':'';
-    h+=`<div class="person"><div class="pav">${esc(initials(p.name||p.identity))}</div><div class="pnm">${esc(p.name||p.identity)}${local?' (You)':''}</div><div class="pstat">${hand}<span class="material-symbols-rounded ${muted?'muted':''}">${muted?'mic_off':'mic'}</span></div></div>`; });
+    h+=`<div class="person"><div class="pav" style="${avatarStyle(p.identity)}">${esc(initials(p.name||p.identity))}</div><div class="pnm">${esc(p.name||p.identity)}${local?' (You)':''}</div><div class="pstat">${hand}<span class="material-symbols-rounded ${muted?'muted':''}">${muted?'mic_off':'mic'}</span></div></div>`; });
   document.getElementById('peopleBody').innerHTML=h;
 }
 
