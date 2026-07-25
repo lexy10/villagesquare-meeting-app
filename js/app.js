@@ -269,6 +269,76 @@ function chime(kind){
   }catch{}
 }
 
+// ---------- reaction sounds (synthesized, no assets) ----------
+// Each reaction gets a short cue that matches its meaning: a clap is filtered
+// noise bursts, a heart is a two-beat pulse, fire is a downward whoosh, etc.
+// Everything is built from oscillators/noise so the app stays a self-contained
+// page with no audio files to ship or preload.
+function _ac(){
+  _actx=_actx||new (window.AudioContext||window.webkitAudioContext)();
+  if(_actx.state==='suspended')_actx.resume();
+  return _actx;
+}
+let _noiseBuf=null;
+function _noiseBuffer(ac){
+  if(_noiseBuf)return _noiseBuf;
+  const n=ac.sampleRate*0.6, buf=ac.createBuffer(1,n,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=Math.random()*2-1;
+  return (_noiseBuf=buf);
+}
+// One shaped oscillator note; `glide` bends the pitch over the note's life.
+function _tone(ac,out,{freq,at=0,dur=.2,type='sine',peak=1,glide=null,attack=.012}){
+  const t=ac.currentTime+at;
+  const o=ac.createOscillator(); o.type=type; o.frequency.setValueAtTime(freq,t);
+  if(glide) o.frequency.exponentialRampToValueAtTime(glide,t+dur);
+  const g=ac.createGain();
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+attack);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t+dur+.02);
+}
+// One shaped noise burst; `sweep` moves the filter for whoosh/crackle effects.
+function _noise(ac,out,{at=0,dur=.12,peak=1,f0=2000,sweep=null,q=1,type='bandpass'}){
+  const t=ac.currentTime+at;
+  const src=ac.createBufferSource(); src.buffer=_noiseBuffer(ac);
+  const f=ac.createBiquadFilter(); f.type=type; f.frequency.setValueAtTime(f0,t); f.Q.value=q;
+  if(sweep) f.frequency.exponentialRampToValueAtTime(sweep,t+dur);
+  const g=ac.createGain();
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(peak,t+.008);
+  g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  src.connect(f); f.connect(g); g.connect(out); src.start(t); src.stop(t+dur+.02);
+}
+
+const REACTION_SOUNDS={
+  '\u{1F44D}':(ac,o)=>{ _tone(ac,o,{freq:1046,dur:.11,peak:.9}); _tone(ac,o,{freq:1568,at:.08,dur:.16,peak:.8}); },              // approving ping
+  '\u2764\uFE0F':(ac,o)=>{ _tone(ac,o,{freq:110,dur:.16,type:'sine',peak:1,attack:.006});                                        // lub
+                       _tone(ac,o,{freq:92,at:.19,dur:.22,type:'sine',peak:.85,attack:.006}); },                                   // dub
+  '\u{1F389}':(ac,o)=>{ [523,659,784,1046].forEach((f,i)=>_tone(ac,o,{freq:f,at:i*.055,dur:.2,type:'triangle',peak:.7}));         // party fanfare
+                    _noise(ac,o,{at:.2,dur:.35,peak:1.1,f0:5000,sweep:1200,type:'highpass'}); },                                   // confetti hiss
+  '\u{1F44F}':(ac,o)=>{ [0,.11,.21,.3].forEach((t,i)=>_noise(ac,o,{at:t,dur:.075,peak:i?2.0:2.7,f0:1600+Math.random()*900,q:.7})); }, // applause
+  '\u{1F602}':(ac,o)=>{ [0,.13,.25,.36].forEach((t,i)=>_tone(ac,o,{freq:520-i*45,at:t,dur:.11,type:'triangle',peak:.85,glide:400-i*40})); }, // ha-ha-ha
+  '\u{1F62E}':(ac,o)=>{ _tone(ac,o,{freq:330,dur:.42,type:'sine',peak:.8,glide:990}); },                                          // rising gasp
+  '\u{1F525}':(ac,o)=>{ _noise(ac,o,{dur:.5,peak:2.2,f0:3400,sweep:420,type:'lowpass',q:.8});                                      // whoosh
+                    [0,.09,.19,.29].forEach(t=>_noise(ac,o,{at:t,dur:.05,peak:.8,f0:2600+Math.random()*1800,q:2})); },            // crackle
+  '\u{1F64C}':(ac,o)=>{ [659,880,1319].forEach((f,i)=>_tone(ac,o,{freq:f,at:i*.07,dur:.28,type:'triangle',peak:.75})); },         // uplifting triad
+};
+
+// A burst of reactions shouldn't turn into noise soup.
+let _sndTimes=[];
+function reactionSound(emoji){
+  const make=REACTION_SOUNDS[emoji]; if(!make)return;
+  const now=Date.now();
+  _sndTimes=_sndTimes.filter(t=>now-t<1000);
+  if(_sndTimes.length>=4)return;
+  _sndTimes.push(now);
+  try{
+    const ac=_ac();
+    const master=ac.createGain(); master.gain.value=.16; master.connect(ac.destination);
+    make(ac,master);
+  }catch{}
+}
+
 // ---------- connect (shared) ----------
 // Publish local audio/video, preferring tracks already captured in pre-join.
 //
@@ -672,7 +742,7 @@ function updateDock(){
 // ---------- reactions ----------
 function toggleReact(){ document.getElementById('reactBar').classList.toggle('open'); document.getElementById('dReact').classList.toggle('accent'); }
 function react(e){ floatEmoji(e); publish({t:'reaction',emoji:e,name:room?.localParticipant?.name}); }
-function floatEmoji(e){ const st=document.querySelector('.mt-stage'); const el=document.createElement('div'); el.className='floatemoji'; el.textContent=e; el.style.left=(28+Math.random()*44)+'%'; st.appendChild(el); setTimeout(()=>el.remove(),3200); }
+function floatEmoji(e){ reactionSound(e); const st=document.querySelector('.mt-stage'); const el=document.createElement('div'); el.className='floatemoji'; el.textContent=e; el.style.left=(28+Math.random()*44)+'%'; st.appendChild(el); setTimeout(()=>el.remove(),3200); }
 function publish(o){ if(!room)return; try{ room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(o)),{reliable:true}); }catch(e){ console.warn(e); } }
 
 // ---------- panels ----------
