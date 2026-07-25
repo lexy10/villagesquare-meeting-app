@@ -11,6 +11,7 @@ let camOn=true, micOn=true, sharing=false, handRaised=false;
 let curPanel=null, unread=0;
 const chatLog=[]; const handsUp=new Set(); const speaking=new Set();
 let pjStream=null, pjCamOn=true, pjMicOn=true, pendingRoom='';
+let pendingRejoin=false;   // set when sign-in was triggered from the rejoin banner
 
 // ---------- helpers ----------
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
@@ -28,6 +29,54 @@ async function apiFetch(path, {method='GET', body, auth=true, multipart=false}={
   let json={}; try{ json=await resp.json(); }catch{}
   if(!resp.ok) throw new Error(json.message || (resp.status+' '+resp.statusText));
   return json.data!==undefined ? json.data : json;
+}
+
+// ---------- host: resume a meeting left without ending ----------
+// Leaving only disconnects this client; the room stays live until the host ends
+// it (or the media server reaps it once no publisher is left). Remember which
+// meeting this browser started so the host can get back in with host powers —
+// rejoining as a guest would work, but would not be able to end it for everyone.
+// Only the identifiers are persisted; the bearer token is never written to disk.
+const HOST_MEETING_KEY='vsm_host_meeting';
+function rememberHostMeeting(m){ try{ localStorage.setItem(HOST_MEETING_KEY,JSON.stringify(m)); }catch{} }
+function forgetHostMeeting(){ try{ localStorage.removeItem(HOST_MEETING_KEY); }catch{} }
+function recallHostMeeting(){ try{ return JSON.parse(localStorage.getItem(HOST_MEETING_KEY)||'null'); }catch{ return null; } }
+
+// Show the rejoin banner only if that meeting is genuinely still live.
+async function refreshRejoinCard(){
+  const card=document.getElementById('rejoinCard'); if(!card)return;
+  const m=recallHostMeeting();
+  if(!m||!m.uuid||!m.roomId){ card.style.display='none'; return; }
+  try{
+    const d=await apiFetch('/livestreams/'+encodeURIComponent(m.roomId)+'/meeting-status',{method:'POST',auth:false});
+    if(d && d.live===false){ forgetHostMeeting(); card.style.display='none'; return; }
+  }catch(e){ /* status unavailable — still offer it; the rejoin call decides */ }
+  document.getElementById('rejoinRoom').textContent=m.title?`${m.title} · ${m.roomId}`:m.roomId;
+  card.style.display='flex';
+}
+
+async function rejoinAsHost(){
+  const m=recallHostMeeting(); if(!m||!m.uuid) return;
+  // Host rejoin is an authenticated call — without a token we can't prove
+  // ownership, so route through sign-in and come straight back here.
+  if(!accessToken){ pendingRejoin=true; show('hostSignin'); toast('Sign in to rejoin as host'); setTimeout(()=>document.getElementById('hEmail').focus(),50); return; }
+  const btn=document.querySelector('#rejoinCard .rj-btn'); if(btn){ btn.disabled=true; btn.textContent='Rejoining…'; }
+  let seed=null;
+  try{
+    try{ seed=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); }
+    catch(e){ camOn=false; micOn=false; }
+    const d=await apiFetch('/livestreams/'+encodeURIComponent(m.uuid)+'/join',{method:'POST'});
+    if(!d.token||!d.livekit_url) throw new Error('No media token returned');
+    roomId=d.room_id||m.roomId; livekitUrl=d.livekit_url; livestreamUuid=m.uuid; myRole='host';
+    shareUrl=location.origin+location.pathname+'?room='+encodeURIComponent(roomId);
+    await connectRoom(d.token, myName()||'Host', m.title||'Meeting', seed);
+    seed=null;
+  }catch(e){
+    if(seed){ try{ seed.getTracks().forEach(t=>t.stop()); }catch{} }
+    // A meeting that has since ended shouldn't keep offering a dead button.
+    if(/not live|not found|ended|denied/i.test(e.message||'')){ forgetHostMeeting(); refreshRejoinCard(); }
+    toast('Could not rejoin: '+e.message,4500);
+  }finally{ if(btn){ btn.disabled=false; btn.textContent='Rejoin'; } }
 }
 
 // ---------- landing ----------
@@ -66,6 +115,7 @@ async function doLogin(){
     accessToken = d.access_token || d.accessToken || d.token || '';
     if(!accessToken) throw new Error('No access token in response');
     document.getElementById('lpAvatar').textContent=initials(email);
+    if(pendingRejoin){ pendingRejoin=false; show('landing'); await rejoinAsHost(); return; }
     show('hostSetup'); setTimeout(()=>document.getElementById('mTitle').select(),50);
   }catch(e){ err.textContent=e.message; err.classList.add('show'); }
   finally{ btn.disabled=false; btn.innerHTML='<span class="material-symbols-rounded">login</span> Sign in'; }
@@ -76,20 +126,31 @@ async function startMeeting(){
   const title=document.getElementById('mTitle').value.trim()||'VillageSquare Meeting';
   const err=document.getElementById('startErr'); err.classList.remove('show');
   const btn=document.getElementById('btnStart'); btn.disabled=true; btn.innerHTML='<span class="material-symbols-rounded">progress_activity</span> Starting…';
+  let seed=null;
   try{
+    // Capture before any other await, while still inside the click gesture:
+    // iOS only shows the camera/mic sheet for a gesture-initiated getUserMedia,
+    // and the granted tracks are then reused for the whole session.
+    try{ seed=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); }
+    catch(e){ console.warn('host media capture failed',e); camOn=false; micOn=false; toast('Starting without camera/mic — you can enable them in the meeting.',4000); }
     const fd=new FormData(); fd.append('title',title); fd.append('category_id','38'); fd.append('privacy','everyone');
     const d=await apiFetch('/livestreams/start',{method:'POST',multipart:true,body:fd});
     roomId = d.room_id; livekitUrl = d.livekit_url; livestreamUuid = d.uuid; myRole='host';
+    rememberHostMeeting({uuid:livestreamUuid, roomId, title});
     const hostToken = d.token;
     if(!hostToken||!livekitUrl) throw new Error('Meeting started but no media token was returned');
     shareUrl = location.origin+location.pathname+'?room='+encodeURIComponent(roomId);
     // connect
-    await connectRoom(hostToken, myName()||'Host', title);
+    await connectRoom(hostToken, myName()||'Host', title, seed);
     // show share modal
     document.getElementById('shareLink').value=shareUrl;
     document.getElementById('shareCode').textContent=roomId;
     document.getElementById('shareModal').classList.add('open');
-  }catch(e){ err.textContent=e.message; err.classList.add('show'); btn.disabled=false; btn.innerHTML='<span class="material-symbols-rounded">rocket_launch</span> Start meeting'; }
+  }catch(e){
+    // Don't leave the camera light on if we never made it into the room.
+    if(seed){ try{ seed.getTracks().forEach(t=>t.stop()); }catch{} }
+    err.textContent=e.message; err.classList.add('show'); btn.disabled=false; btn.innerHTML='<span class="material-symbols-rounded">rocket_launch</span> Start meeting';
+  }
 }
 function myName(){ return document.getElementById('hEmail')?.value?.split('@')[0] || ''; }
 
@@ -105,7 +166,10 @@ async function startPreview(){
   try{ pjStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); document.getElementById('pjVideo').srcObject=pjStream; applyPj(); }
   catch{ pjCamOn=false; pjMicOn=false; document.getElementById('pjOff').classList.add('show'); updatePjBtns(); toast('Camera/mic unavailable — you can still join.'); }
 }
-function stopPreview(){ if(pjStream){ pjStream.getTracks().forEach(t=>t.stop()); pjStream=null; } }
+function stopPreview(){ if(pjStream){ pjStream.getTracks().forEach(t=>t.stop()); pjStream=null; } detachPreview(); }
+// Release the <video> element WITHOUT stopping the tracks — used when the
+// preview stream is being handed to LiveKit instead of discarded.
+function detachPreview(){ const v=document.getElementById('pjVideo'); if(v){ try{ v.srcObject=null; }catch{} } }
 function applyPj(){ if(!pjStream)return; pjStream.getVideoTracks().forEach(t=>t.enabled=pjCamOn); pjStream.getAudioTracks().forEach(t=>t.enabled=pjMicOn); document.getElementById('pjOff').classList.toggle('show',!pjCamOn); updatePjBtns(); }
 function updatePjBtns(){ const m=document.getElementById('pjMicBtn'),c=document.getElementById('pjCamBtn'); m.classList.toggle('off',!pjMicOn); m.querySelector('.material-symbols-rounded').textContent=pjMicOn?'mic':'mic_off'; c.classList.toggle('off',!pjCamOn); c.querySelector('.material-symbols-rounded').textContent=pjCamOn?'videocam':'videocam_off'; }
 function pjMic(){ pjMicOn=!pjMicOn; applyPj(); }
@@ -120,13 +184,20 @@ async function guestJoin(){
   localStorage.setItem('vsm_name',name);
   camOn=pjCamOn; micOn=pjMicOn; myRole='guest';
   const btn=document.getElementById('btnGuestJoin'); btn.disabled=true; btn.innerHTML='<span class="material-symbols-rounded">progress_activity</span> Joining…';
+  let seed=null;
   try{
     const d=await apiFetch('/livestreams/'+encodeURIComponent(pendingRoom)+'/guest-token',{method:'POST',auth:false,body:{name}});
     roomId=d.room_id; livekitUrl=d.livekit_url; shareUrl=location.origin+location.pathname+'?room='+encodeURIComponent(roomId);
     if(!d.token||!livekitUrl) throw new Error('No media token returned');
-    stopPreview();
-    await connectRoom(d.token, name, 'Meeting');
+    // Hand the already-permitted preview tracks to LiveKit rather than stopping
+    // them — see publishLocalMedia() for why re-acquiring breaks on iOS.
+    seed=pjStream; pjStream=null; detachPreview();
+    await connectRoom(d.token, name, 'Meeting', seed);
+    seed=null; // ownership transferred to LiveKit
   }catch(e){
+    // We took the preview tracks out of pjStream, so stopPreview() can no longer
+    // reach them — release here or the camera light stays on after a failure.
+    if(seed){ try{ seed.getTracks().forEach(t=>t.stop()); }catch{} seed=null; }
     btn.disabled=false; btn.innerHTML='<span class="material-symbols-rounded">login</span> Join now';
     if(/not live|not found|room/i.test(e.message||'')){ stopPreview(); showNotLive(pendingRoom); }
     else toast('Could not join: '+e.message,4500);
@@ -155,7 +226,37 @@ function chime(kind){
 }
 
 // ---------- connect (shared) ----------
-async function connectRoom(token, displayName, title){
+// Publish local audio/video, preferring tracks already captured in pre-join.
+//
+// iOS (Chrome and Safari both run WKWebView) will not re-prompt for the
+// microphone once a granted audio track has been released — a second
+// getUserMedia for audio rejects with NotAllowedError instead of showing the
+// permission sheet. So handing LiveKit the live pre-join tracks, rather than
+// stopping them and capturing again, is what keeps the mic working. It also
+// means later dock toggles only mute/unmute an existing publication, so they
+// never hit getUserMedia (and never hit that iOS restriction) at all.
+async function publishLocalMedia(seed){
+  const at=seed&&seed.getAudioTracks&&seed.getAudioTracks()[0];
+  const vt=seed&&seed.getVideoTracks&&seed.getVideoTracks()[0];
+  if(at||vt){
+    try{
+      if(at) await room.localParticipant.publishTrack(at,{source:LK.Track.Source.Microphone});
+      if(vt) await room.localParticipant.publishTrack(vt,{source:LK.Track.Source.Camera});
+      // Publish first, then apply the user's pre-join choices as mute state, so
+      // a guest who joined muted can still unmute later without a new capture.
+      await room.localParticipant.setMicrophoneEnabled(micOn).catch(()=>{});
+      await room.localParticipant.setCameraEnabled(camOn).catch(()=>{});
+      return;
+    }catch(e){
+      console.warn('reusing pre-join tracks failed, capturing fresh',e);
+      try{ seed.getTracks().forEach(t=>t.stop()); }catch{}
+    }
+  }
+  await room.localParticipant.setCameraEnabled(camOn).catch(()=>{});
+  await room.localParticipant.setMicrophoneEnabled(micOn).catch(()=>{});
+}
+
+async function connectRoom(token, displayName, title, seedStream){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
   ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
@@ -165,8 +266,7 @@ async function connectRoom(token, displayName, title){
   room.on(LK.RoomEvent.Disconnected,()=>cleanup());
   room.on(LK.RoomEvent.DataReceived,(payload,p)=>{ try{ handleData(JSON.parse(new TextDecoder().decode(payload)),p);}catch{} });
   await room.connect(livekitUrl.trim(), token);
-  await room.localParticipant.setCameraEnabled(camOn).catch(()=>{});
-  await room.localParticipant.setMicrophoneEnabled(micOn).catch(()=>{});
+  await publishLocalMedia(seedStream);
   document.getElementById('mtTitle').textContent=title||'Meeting';
   document.getElementById('mtCode').textContent=roomId;
   show('meeting'); renderGrid(); renderPeople(); updateDock();
@@ -235,9 +335,16 @@ function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.class
 // while the permission prompt is open, so an impatient double-tap can't flip
 // the flag twice and cancel itself out.
 let micBusy=false, camBusy=false;
+const IS_IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 function deviceError(e,kind,on){
   const n=(e&&e.name)||'';
-  if(n==='NotAllowedError'||n==='SecurityError') return `${kind} blocked — allow access in your browser settings, then tap again`;
+  if(n==='NotAllowedError'||n==='SecurityError'){
+    // iOS grants camera/mic to the browser app itself, so a denial there can't
+    // be undone from the page — point at the setting that actually controls it.
+    return IS_IOS
+      ? `${kind} blocked — turn on ${kind} for your browser in iOS Settings, then reload`
+      : `${kind} blocked — allow access from the padlock in the address bar, then tap again`;
+  }
   if(n==='NotFoundError') return `No ${kind.toLowerCase()} found on this device`;
   if(n==='NotReadableError') return `${kind} is in use by another app — close it and tap again`;
   return `Could not turn ${kind.toLowerCase()} ${on?'on':'off'} — tap to retry`;
@@ -327,6 +434,7 @@ async function endMeeting(){
   const btn=document.getElementById('lmEnd');
   try{
     await apiFetch('/livestreams/'+encodeURIComponent(livestreamUuid)+'/end-livestream');
+    forgetHostMeeting();
     toast('Meeting ended for everyone');
     if(room)room.disconnect();
   }catch(e){
@@ -339,11 +447,16 @@ function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid='
   ['btnGuestJoin','btnStart'].forEach(id=>{const b=document.getElementById(id); if(b)b.disabled=false;});
   document.getElementById('btnGuestJoin').innerHTML='<span class="material-symbols-rounded">login</span> Join now';
   document.getElementById('btnStart').innerHTML='<span class="material-symbols-rounded">rocket_launch</span> Start meeting';
-  show('landing'); toast('You left the meeting');
+  show('landing'); refreshRejoinCard(); toast('You left the meeting');
 }
 
 // ---------- deep link ?room= ----------
-(function(){ const r=new URLSearchParams(location.search).get('room'); if(r){ checkAndProceed(r); } })();
+(function(){
+  const r=new URLSearchParams(location.search).get('room');
+  if(r){ checkAndProceed(r); return; }
+  // No deep link — surface a meeting this browser started and never ended.
+  refreshRejoinCard();
+})();
 document.addEventListener('click',e=>{ const m=document.getElementById('leaveMenu'); if(m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.dbtn.leave')) closeLeaveMenu(); });
 window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); stopPreview(); });
 // The grid's column count depends on viewport/orientation, so re-lay it out on

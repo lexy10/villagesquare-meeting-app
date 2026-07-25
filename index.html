@@ -49,6 +49,11 @@
       <h1>Gather your <em>village</em>, wherever you are</h1>
       <p class="sub">Start a room, share one link, and everyone hops in with just their name. Real-time video, chat and reactions — powered by VillageSquare.</p>
       <div class="lp-actions">
+        <div class="rejoin" id="rejoinCard" style="display:none">
+          <span class="material-symbols-rounded rj-ico">sensors</span>
+          <div class="rj-txt"><b>Your meeting is still running</b><span id="rejoinRoom">—</span></div>
+          <button class="rj-btn" onclick="rejoinAsHost()">Rejoin</button>
+        </div>
         <div class="act-row">
           <button class="btn-primary" onclick="goHostSignin()"><span class="material-symbols-rounded">video_call</span> Start a meeting</button>
         </div>
