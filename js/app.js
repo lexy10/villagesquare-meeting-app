@@ -181,17 +181,35 @@ function handleData(d,p){ const who=p?(p.name||p.identity):'Someone';
 
 // ---------- grid ----------
 function parts(){ return room?[room.localParticipant,...room.remoteParticipants.values()]:[]; }
-function cols(n){ return n<=1?1:n<=4?2:n<=9?3:4; }
+function isPhonePortrait(){ return window.innerWidth<=600 && window.innerHeight>window.innerWidth; }
+// On a phone in portrait, splitting into columns yields tall slivers (a 2-up
+// side-by-side is ~170px wide). Stacking keeps every tile roughly landscape,
+// which is how faces actually fit. Wider screens keep the square-ish layout.
+function cols(n){
+  if(isPhonePortrait()) return n<=3?1:2;
+  return n<=1?1:n<=4?2:n<=9?3:4;
+}
 function renderGrid(){
   if(!room)return; const grid=document.getElementById('grid');
   grid.querySelectorAll('video,audio').forEach(el=>{try{el.srcObject=null;}catch{}el.remove();}); grid.innerHTML='';
   const ps=parts(), n=ps.length, c=cols(n), r=Math.ceil(n/c);
-  grid.style.gridTemplateColumns=`repeat(${c},1fr)`; grid.style.gridTemplateRows=`repeat(${r},1fr)`;
-  grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
+  const phone=isPhonePortrait();
+  grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
+  if(phone){
+    // Phones keep each tile at a readable shape (set in CSS) and let the strip
+    // scroll instead of squashing everyone into slivers to fit one screenful.
+    grid.style.gridTemplateRows=`repeat(${r},auto)`;
+    grid.style.height='auto'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
+  }else{
+    grid.style.gridTemplateRows=`repeat(${r},1fr)`;
+    grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
+  }
   ps.forEach((p,i)=>{
     const local=p===room.localParticipant;
     const tile=document.createElement('div'); tile.className='tile'+(local?' local':'')+(speaking.has(p.identity)?' speaking':''); tile.dataset.id=p.identity;
-    if(n===3&&i===0)tile.style.gridColumn='1 / -1';
+    // Odd-count top tile spans the full row — but not when stacking (c===1),
+    // where every tile already spans the only column.
+    if(n===3&&i===0&&c>1)tile.style.gridColumn='1 / -1';
     const scr=p.getTrackPublication(LK.Track.Source.ScreenShare), cam=p.getTrackPublication(LK.Track.Source.Camera);
     let vt=null,isScr=false;
     if(scr&&scr.track&&!scr.isMuted){vt=scr.track;isScr=true;} else if(cam&&cam.track&&!cam.isMuted){vt=cam.track;}
@@ -210,8 +228,42 @@ function renderGrid(){
 function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('speaking',speaking.has(t.dataset.id))); }
 
 // ---------- dock controls ----------
-async function toggleMic(){ if(!room)return; micOn=!micOn; await room.localParticipant.setMicrophoneEnabled(micOn); updateDock(); renderGrid(); }
-async function toggleCam(){ if(!room)return; camOn=!camOn; await room.localParticipant.setCameraEnabled(camOn); updateDock(); renderGrid(); }
+// Mic/cam toggles hit getUserMedia when switching ON, which can reject (denied
+// or dismissed permission prompt, device busy). The flag must therefore only
+// stick if the device call actually succeeded — otherwise the button state and
+// the real track drift apart and the UI looks "stuck". `busy` blocks re-entry
+// while the permission prompt is open, so an impatient double-tap can't flip
+// the flag twice and cancel itself out.
+let micBusy=false, camBusy=false;
+function deviceError(e,kind,on){
+  const n=(e&&e.name)||'';
+  if(n==='NotAllowedError'||n==='SecurityError') return `${kind} blocked — allow access in your browser settings, then tap again`;
+  if(n==='NotFoundError') return `No ${kind.toLowerCase()} found on this device`;
+  if(n==='NotReadableError') return `${kind} is in use by another app — close it and tap again`;
+  return `Could not turn ${kind.toLowerCase()} ${on?'on':'off'} — tap to retry`;
+}
+async function toggleMic(){
+  if(!room||micBusy)return;
+  micBusy=true; const next=!micOn;
+  try{
+    await room.localParticipant.setMicrophoneEnabled(next);
+    micOn=next;
+  }catch(e){
+    console.warn('mic toggle failed',e);
+    toast(deviceError(e,'Microphone',next),4000);
+  }finally{ micBusy=false; updateDock(); renderGrid(); }
+}
+async function toggleCam(){
+  if(!room||camBusy)return;
+  camBusy=true; const next=!camOn;
+  try{
+    await room.localParticipant.setCameraEnabled(next);
+    camOn=next;
+  }catch(e){
+    console.warn('cam toggle failed',e);
+    toast(deviceError(e,'Camera',next),4000);
+  }finally{ camBusy=false; updateDock(); renderGrid(); }
+}
 async function toggleShare(){ if(!room)return; try{ sharing=!sharing; await room.localParticipant.setScreenShareEnabled(sharing); updateDock(); }catch{ sharing=false; updateDock(); toast('Screen share cancelled'); } }
 function toggleHand(){ if(!room)return; handRaised=!handRaised; if(handRaised)handsUp.add(room.localParticipant.identity); else handsUp.delete(room.localParticipant.identity); publish({t:'hand',raised:handRaised,name:room.localParticipant.name}); updateDock(); renderGrid(); renderPeople(); toast(handRaised?'You raised your hand ✋':'Hand lowered'); }
 function updateDock(){
@@ -294,3 +346,7 @@ function cleanup(){ room=null; sharing=false; handRaised=false; livestreamUuid='
 (function(){ const r=new URLSearchParams(location.search).get('room'); if(r){ checkAndProceed(r); } })();
 document.addEventListener('click',e=>{ const m=document.getElementById('leaveMenu'); if(m.classList.contains('open') && !m.contains(e.target) && !e.target.closest('.dbtn.leave')) closeLeaveMenu(); });
 window.addEventListener('beforeunload',()=>{ if(room)room.disconnect(); stopPreview(); });
+// The grid's column count depends on viewport/orientation, so re-lay it out on
+// rotate or resize. Debounced because iOS fires resize repeatedly mid-rotation.
+let _relayout;
+window.addEventListener('resize',()=>{ clearTimeout(_relayout); _relayout=setTimeout(()=>{ if(room)renderGrid(); },150); });

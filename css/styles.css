@@ -244,9 +244,12 @@ input,textarea,select{font-family:inherit}
 
   /* grid: fill the cells (no 16:9 letterboxing → no huge gaps) */
   .mt-stage{padding:0 4px}
-  .mt-gridwrap{padding:6px 6px 84px}
-  .mt-grid{gap:8px}
-  .tile{aspect-ratio:auto;max-width:none;height:100%;border-radius:16px}
+  /* Tiles keep a readable shape; the strip scrolls behind the fixed dock. */
+  .mt-gridwrap{padding:6px 6px 84px;align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  /* auto margins centre the strip when it fits, but yield (no clipping) when
+     it overflows and needs to scroll — align-items:center would clip the top. */
+  .mt-grid{gap:8px;align-content:start;margin:auto 0}
+  .tile{aspect-ratio:16/10;max-width:none;height:auto;min-height:150px;border-radius:16px}
   .tile .tav{width:64px;height:64px;font-size:26px}
   .tile .tname{top:8px;right:8px;font-size:11px;padding:3px 8px;gap:5px}
   .tile .thand{top:8px;left:8px;width:30px;height:30px;font-size:16px}
