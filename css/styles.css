@@ -283,6 +283,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
 .mt-dock{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--dock-bg);backdrop-filter:blur(20px);border:1px solid var(--navy-line);padding:10px 14px;border-radius:22px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:30}
 .dbtn{width:52px;height:52px;border-radius:16px;background:var(--chip);color:var(--ink);display:flex;align-items:center;justify-content:center;transition:background .14s,transform .1s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 .dbtn *{pointer-events:none}
+.dbtn:disabled{opacity:.38;cursor:default}
 @media (hover:hover){.dbtn:hover{background:var(--chip-hi)}}
 .dbtn:active{transform:scale(.95)}
 .dbtn.off{background:#ea4b5a;color:#fff}

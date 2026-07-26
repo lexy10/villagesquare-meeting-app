@@ -896,13 +896,41 @@ async function syncLocalMediaState(){
   micOn=nextMic; camOn=nextCam;
   updateDock(); renderGrid(); renderPeople();
 }
-async function toggleShare(){ if(!room)return; try{ sharing=!sharing; await room.localParticipant.setScreenShareEnabled(sharing); updateDock(); }catch{ sharing=false; updateDock(); toast('Screen share cancelled'); } }
+// Screen capture is a desktop-browser capability. iOS exposes no web API for it
+// at all (every iOS browser is WebKit under the hood), and Chrome for Android
+// doesn't implement getDisplayMedia either — the mobile Meet app does it with
+// native platform APIs, which a web page cannot reach. So detect it up front and
+// say so, rather than failing with a misleading "cancelled".
+function canShareScreen(){
+  return !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia==='function');
+}
+async function toggleShare(){
+  if(!room)return;
+  if(!canShareScreen()){
+    toast('Screen sharing needs a desktop browser — mobile browsers can’t capture the screen',5000);
+    return;
+  }
+  const next=!sharing;
+  try{
+    await room.localParticipant.setScreenShareEnabled(next);
+    sharing=next;
+  }catch(e){
+    // Picker dismissed is the common case and isn't an error worth alarming over.
+    const n=(e&&e.name)||'';
+    if(n==='NotAllowedError') toast('Screen share cancelled');
+    else{ console.warn('screen share failed',e); toast('Could not start screen share — '+(e&&e.message||'unknown error'),4500); }
+  }finally{ updateDock(); }
+}
 function toggleHand(){ if(!room)return; handRaised=!handRaised; if(handRaised)handsUp.add(room.localParticipant.identity); else handsUp.delete(room.localParticipant.identity); publish({t:'hand',raised:handRaised,name:room.localParticipant.name}); updateDock(); renderGrid(); renderPeople(); toast(handRaised?'You raised your hand ✋':'Hand lowered'); }
 function updateDock(){
   const m=document.getElementById('dMic'),c=document.getElementById('dCam'),s=document.getElementById('dShare'),h=document.getElementById('dHand');
   m.classList.toggle('off',!micOn); m.querySelector('.material-symbols-rounded').textContent=micOn?'mic':'mic_off';
   c.classList.toggle('off',!camOn); c.querySelector('.material-symbols-rounded').textContent=camOn?'videocam':'videocam_off';
   s.classList.toggle('accent',sharing); s.querySelector('.material-symbols-rounded').textContent=sharing?'cancel_presentation':'present_to_all';
+  // Unsupported on mobile browsers — show it greyed rather than pretending.
+  const shareOk=canShareScreen();
+  s.disabled=!shareOk;
+  s.title=shareOk?(sharing?'Stop presenting':'Present'):'Screen sharing isn’t supported on mobile browsers';
   h.classList.toggle('accent',handRaised);
 }
 
