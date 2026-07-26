@@ -492,7 +492,7 @@ async function publishLocalMedia(seed){
 async function connectRoom(token, displayName, title, seedStream){
   room=new LK.Room({adaptiveStream:true,dynacast:true});
   ['ParticipantConnected','ParticipantDisconnected','TrackSubscribed','TrackUnsubscribed','TrackPublished','TrackUnpublished','TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
-    .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{renderGrid();renderPeople();}));
+    .forEach(ev=>room.on(LK.RoomEvent[ev],()=>{syncPresentations();renderGrid();renderPeople();}));
   // Mirror server-side (host) mutes into our own control state.
   ['TrackMuted','TrackUnmuted','LocalTrackPublished','LocalTrackUnpublished']
     .forEach(ev=>room.on(LK.RoomEvent[ev],(_a,p)=>{ if(!p||p===room.localParticipant) syncLocalMediaState(); }));
@@ -501,7 +501,8 @@ async function connectRoom(token, displayName, title, seedStream){
     if(myRole==='host'&&pinned) setTimeout(()=>publish({t:'pin',identity:pinned}),600);});
   room.on(LK.RoomEvent.ParticipantDisconnected,p=>{chime('leave');handsUp.delete(p.identity);speaking.delete(p.identity);
     // Drop the spotlight if the pinned person is the one who left.
-    if(pinned===p.identity){ pinned=''; if(myRole==='host') publish({t:'pin',identity:''}); }
+    if(pinned===p.identity||pinned===p.identity+SCREEN_SUFFIX){ pinned=''; if(myRole==='host') publish({t:'pin',identity:''}); }
+    knownShares.delete(p.identity);
     if(tileMenuFor===p.identity) closeTileMenu();
     toast((p.name||p.identity)+' left');});
   room.on(LK.RoomEvent.ActiveSpeakersChanged,s=>{speaking.clear();s.forEach(p=>speaking.add(p.identity));updateSpeaking();});
@@ -542,22 +543,35 @@ let stripEl=null;
 // unpublish the publication can briefly still be present with a dead track —
 // attaching that paints a black tile that only cleared on the next full render
 // (which is why toggling the theme "fixed" it).
-function liveVideo(p){
-  const pick=(pub,isScr)=>{
-    if(!pub||!pub.track||pub.isMuted) return null;
-    const mst=pub.track.mediaStreamTrack;
-    if(mst && mst.readyState!=='live') return null;
-    return {pub,track:pub.track,isScr};
-  };
-  return pick(p.getTrackPublication(LK.Track.Source.ScreenShare),true)
-      || pick(p.getTrackPublication(LK.Track.Source.Camera),false);
+function livePub(pub,isScr){
+  if(!pub||!pub.track||pub.isMuted) return null;
+  const mst=pub.track.mediaStreamTrack;
+  if(mst && mst.readyState!=='live') return null;
+  return {pub,track:pub.track,isScr};
 }
+function screenPub(p){ return livePub(p.getTrackPublication(LK.Track.Source.ScreenShare),true); }
+function cameraPub(p){ return livePub(p.getTrackPublication(LK.Track.Source.Camera),false); }
 
-function ensureTile(p){
-  let el=tileEls.get(p.identity);
+// A presentation is its own tile, not a replacement for the presenter's camera —
+// so you keep seeing their face while their screen is up, exactly like Meet.
+// Each entry is one tile: {key, p, screen}. `key` is what pinning refers to.
+function renderables(){
+  const out=[];
+  parts().forEach(p=>{
+    if(screenPub(p)) out.push({key:p.identity+SCREEN_SUFFIX,p,screen:true});
+    out.push({key:p.identity,p,screen:false});
+  });
+  return out;
+}
+const SCREEN_SUFFIX='::screen';
+function isScreenKey(k){ return typeof k==='string' && k.endsWith(SCREEN_SUFFIX); }
+function keyIdentity(k){ return isScreenKey(k) ? k.slice(0,-SCREEN_SUFFIX.length) : k; }
+
+function ensureTile(key){
+  let el=tileEls.get(key);
   if(el) return el;
   el=document.createElement('div');
-  el.className='tile'; el.dataset.id=p.identity;
+  el.className='tile'; el.dataset.id=key;
   const av=document.createElement('div'); av.className='tav';
   // Material icon rather than the ✋ emoji: the emoji renders in its own yellow,
   // which disappeared against the yellow badge.
@@ -565,12 +579,13 @@ function ensureTile(p){
   hand.innerHTML='<span class="material-symbols-rounded">front_hand</span>';
   const label=document.createElement('div'); label.className='tname';
   el.append(av,hand,label);
-  tileEls.set(p.identity,el);
+  tileEls.set(key,el);
   return el;
 }
 
-function updateTile(el,p,{local,isPinned,grid}){
-  const vsel=liveVideo(p);
+function updateTile(el,spec,{local,isPinned,grid}){
+  const p=spec.p, isScreen=spec.screen;
+  const vsel=isScreen?screenPub(p):cameraPub(p);
   // Swap the media element only when the underlying track really changed.
   const wantV=vsel?(vsel.pub.trackSid||vsel.pub.sid||'v'):'';
   if(wantV!==(el.dataset.vsid||'')){
@@ -597,12 +612,12 @@ function updateTile(el,p,{local,isPinned,grid}){
   if(!isPinned) el.style.removeProperty('--pin-ar');
 
   const av=el.querySelector('.tav');
-  if(vsel){ av.style.display='none'; }
+  if(vsel||isScreen){ av.style.display='none'; }
   else{ av.style.cssText=avatarStyle(p.identity); av.textContent=initials(p.name||p.identity); }
 
   const mic=p.getTrackPublication(LK.Track.Source.Microphone);
   const micLive=!!(mic&&mic.track&&!mic.isMuted);
-  const wantA=(!local&&micLive)?(mic.trackSid||mic.sid||'a'):'';
+  const wantA=(!local&&micLive&&!isScreen)?(mic.trackSid||mic.sid||'a'):'';
   if(wantA!==(el.dataset.asid||'')){
     const olda=el.querySelector('audio');
     if(olda){ try{ olda.srcObject=null; }catch{} olda.remove(); }
@@ -610,16 +625,21 @@ function updateTile(el,p,{local,isPinned,grid}){
     el.dataset.asid=wantA;
   }
 
-  const name=p.name||p.identity;
+  const person=p.name||p.identity;
+  const name=isScreen?(local?'Your presentation':`${person}'s presentation`):person;
   const label=el.querySelector('.tname');
-  const html=(micLive?'':'<span class="material-symbols-rounded">mic_off</span>')+
-    `<span class="nm">${esc(name)}</span>`+(local?'<span class="badge-you">YOU</span>':'');
+  const html=isScreen
+    ? '<span class="material-symbols-rounded">present_to_all</span>'+`<span class="nm">${esc(name)}</span>`
+    : (micLive?'':'<span class="material-symbols-rounded">mic_off</span>')+
+      `<span class="nm">${esc(name)}</span>`+(local?'<span class="badge-you">YOU</span>':'');
   if(label.innerHTML!==html) label.innerHTML=html;
 
-  el.querySelector('.thand').classList.toggle('show',handsUp.has(p.identity));
-  el.classList.toggle('screen',!!(vsel&&vsel.isScr));
-  el.classList.toggle('local',local&&!(vsel&&vsel.isScr));
-  el.classList.toggle('speaking',speaking.has(p.identity));
+  // A hand belongs to the person, not to their screen; and never mirror a shared
+  // screen the way we mirror a selfie camera.
+  el.querySelector('.thand').classList.toggle('show',!isScreen&&handsUp.has(p.identity));
+  el.classList.toggle('screen',isScreen);
+  el.classList.toggle('local',local&&!isScreen);
+  el.classList.toggle('speaking',!isScreen&&speaking.has(p.identity));
   el.classList.toggle('pin',isPinned);
 
   let badge=el.querySelector('.tpin');
@@ -629,12 +649,12 @@ function updateTile(el,p,{local,isPinned,grid}){
 
   // Moderation is host-only; the role can change on rejoin, so keep it in sync.
   let more=el.querySelector('.tmore');
-  if(myRole==='host'&&!more){
+  if(myRole==='host'&&!isScreen&&!more){
     more=document.createElement('button'); more.className='tmore'; more.title='Participant options';
     more.innerHTML='<span class="material-symbols-rounded">more_vert</span>';
     more.onclick=(ev)=>{ ev.stopPropagation(); openTileMenu(el.dataset.id,el.dataset.nm||el.dataset.id,el.classList.contains('local'),ev.currentTarget); };
     el.appendChild(more);
-  }else if(myRole!=='host'&&more) more.remove();
+  }else if((myRole!=='host'||isScreen)&&more) more.remove();
   el.dataset.nm=name;
 }
 
@@ -647,9 +667,9 @@ function placeChildren(container,els){
 
 function renderGrid(){
   if(!room)return; const grid=document.getElementById('grid');
-  const ps=parts();
+  const ps=renderables();
   const phone=isPhonePortrait();
-  const pinIdx = pinned ? ps.findIndex(p=>p.identity===pinned) : -1;
+  const pinIdx = pinned ? ps.findIndex(t=>t.key===pinned) : -1;
   const hasPin = pinIdx>=0;
   if(hasPin) ps.unshift(ps.splice(pinIdx,1)[0]);
   const n=ps.length;
@@ -682,11 +702,11 @@ function renderGrid(){
   grid.classList.toggle('fit',fit);
 
   const mainEls=[], stripTiles=[];
-  ps.forEach((p,i)=>{
-    const local=p===room.localParticipant;
+  ps.forEach((spec,i)=>{
+    const local=spec.p===room.localParticipant;
     const isPinned=hasPin&&i===0;
-    const el=ensureTile(p);
-    updateTile(el,p,{local,isPinned,grid});
+    const el=ensureTile(spec.key);
+    updateTile(el,spec,{local,isPinned,grid});
     if(centred){
       const row=Math.floor(i/c), inRow=i%c;
       const inThisRow=(row===rowCount-1) ? n-(rowCount-1)*c : c;
@@ -705,14 +725,41 @@ function renderGrid(){
   }
 
   // Drop tiles for anyone who has left, releasing their media elements.
-  const alive=new Set(ps.map(p=>p.identity));
+  const alive=new Set(ps.map(t=>t.key));
   tileEls.forEach((el,id)=>{
     if(alive.has(id)) return;
     el.querySelectorAll('video,audio').forEach(m=>{ try{ m.srcObject=null; }catch{} });
     el.remove(); tileEls.delete(id);
   });
-  document.getElementById('peopleCnt').textContent=n;
+  document.getElementById('peopleCnt').textContent=parts().length;
 }
+// Presentations announce themselves and take the spotlight for everyone, then
+// hand it back when they end. Each client detects this from its own view of the
+// room, so it works for guests too and needs no host action or data message.
+const knownShares=new Set();
+function syncPresentations(){
+  if(!room)return;
+  const live=new Set();
+  parts().forEach(p=>{ if(screenPub(p)) live.add(p.identity); });
+
+  live.forEach(id=>{
+    if(knownShares.has(id)) return;
+    knownShares.add(id);
+    const p=parts().find(x=>x.identity===id);
+    const mine=p===room.localParticipant;
+    pinned=id+SCREEN_SUFFIX;                       // spotlight the presentation
+    toast(mine?'You are presenting to everyone':`${(p&&(p.name||p.identity))||'Someone'} is presenting`,3600);
+    if(!mine) chime('join');
+  });
+
+  knownShares.forEach(id=>{
+    if(live.has(id)) return;
+    knownShares.delete(id);
+    // Release the spotlight only if it was still on that presentation.
+    if(pinned===id+SCREEN_SUFFIX) pinned='';
+  });
+}
+
 function updateSpeaking(){ document.querySelectorAll('.tile').forEach(t=>t.classList.toggle('speaking',speaking.has(t.dataset.id))); }
 
 // ---------- host moderation ----------
@@ -921,7 +968,7 @@ async function endMeeting(){
   }
 }
 function cleanup(){ tileEls.forEach(el=>{ el.querySelectorAll('video,audio').forEach(m=>{try{m.srcObject=null;}catch{}}); el.remove(); }); tileEls.clear(); if(stripEl){ stripEl.remove(); stripEl=null; }
-  room=null; sharing=false; handRaised=false; livestreamUuid=''; myRole='guest'; pinned=''; closeTileMenu(); handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
+  room=null; sharing=false; handRaised=false; knownShares.clear(); livestreamUuid=''; myRole='guest'; pinned=''; closeTileMenu(); handsUp.clear(); speaking.clear(); chatLog.length=0; unread=0;
   document.getElementById('grid').innerHTML=''; closePanel(); closeLeaveMenu(); document.getElementById('shareModal').classList.remove('open');
   ['btnGuestJoin','btnStart'].forEach(id=>{const b=document.getElementById(id); if(b)b.disabled=false;});
   document.getElementById('btnGuestJoin').innerHTML='<span class="material-symbols-rounded">login</span> Join now';
