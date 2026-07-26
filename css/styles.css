@@ -182,9 +182,12 @@ input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
 .codechip button:hover{background:rgba(255,255,255,.08);color:#fff}
 
 .mt-stage{flex:1;display:flex;min-height:0;position:relative;padding:0 8px}
-.mt-gridwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px 100px;min-width:0}
-.mt-grid{display:grid;gap:14px;width:100%;height:100%;align-content:center;justify-items:center;align-items:center}
-.tile{position:relative;width:100%;height:auto;max-width:min(100%,860px);aspect-ratio:16/9;max-height:100%;background:var(--tile-grad);border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.mt-gridwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px 8px 100px;min-width:0;overflow:hidden}
+/* Scroll mode is flagged from JS (not :has()) so support is never in question. */
+.mt-grid.scrolling{align-content:start;margin-top:0;margin-bottom:0}
+.mt-gridwrap.scrollmode{align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.mt-grid{display:grid;gap:14px;align-content:center;justify-content:center;justify-items:stretch;align-items:stretch;margin:auto}
+.tile{position:relative;width:100%;height:100%;min-width:0;min-height:0;background:var(--tile-grad);border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-md)}
 .tile::after{content:'';position:absolute;inset:0;border-radius:20px;border:2.5px solid transparent;pointer-events:none;transition:border-color .15s}
 .tile.speaking::after{border-color:var(--cyan);box-shadow:inset 0 0 24px rgba(0,212,255,.18)}
 .tile video{width:100%;height:100%;object-fit:cover}
@@ -378,14 +381,11 @@ input::placeholder,textarea::placeholder{color:var(--muted);opacity:1}
   /* grid: fill the cells (no 16:9 letterboxing → no huge gaps) */
   .mt-stage{padding:0 4px}
   /* Tiles keep a readable shape; the strip scrolls behind the fixed dock. */
-  .mt-gridwrap{padding:6px 6px 84px;align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .mt-gridwrap{padding:6px 6px 84px}
   /* auto margins centre the strip when it fits, but yield (no clipping) when
      it overflows and needs to scroll — align-items:center would clip the top. */
-  .mt-grid{gap:8px;align-content:start;margin:auto 0}
-  .tile{aspect-ratio:16/10;max-width:none;height:auto;min-height:150px;border-radius:16px}
-  /* exactly 3 on a phone: share the height instead of overflowing into a scroll */
-  .mt-grid.fit{height:100%}
-  .mt-grid.fit .tile{aspect-ratio:auto;height:100%;min-height:0}
+  .mt-grid{gap:8px}
+  .tile{border-radius:16px}
   /* Spotlight mode sizes tiles from the grid rows, so drop the fixed shape and
      the scrolling strip — the pinned view is meant to fit one screen. */
   /* Phone: a 232px side strip would leave the spotlight too narrow, so the

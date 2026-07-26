@@ -526,12 +526,74 @@ function handleData(d,p){ const who=p?(p.name||p.identity):'Someone';
 // ---------- grid ----------
 function parts(){ return room?[room.localParticipant,...room.remoteParticipants.values()]:[]; }
 function isPhonePortrait(){ return window.innerWidth<=600 && window.innerHeight>window.innerWidth; }
-// On a phone in portrait, splitting into columns yields tall slivers (a 2-up
-// side-by-side is ~170px wide). Stacking keeps every tile roughly landscape,
-// which is how faces actually fit. Wider screens keep the square-ish layout.
-function cols(n){
-  if(isPhonePortrait()) return n<=3?1:2;
-  return n<=1?1:n<=4?2:n<=9?3:4;
+
+// ---------- tile layout solver ----------
+// Rather than hard-coding "2 columns up to 4 people, then 3", try every column
+// count and keep whichever yields the largest tile at a sensible shape. That one
+// rule covers a landscape laptop, a portrait phone and every rotation between,
+// because the answer falls out of the container's real dimensions.
+const GAP_DESKTOP=14, GAP_PHONE=8;
+const MIN_TILE_W=132;      // below this a face is unreadable — scroll instead
+const MIN_TILE_H=96;
+
+// The shape to aim tiles at. A landscape container suits 16:9 (webcams and
+// shared screens are landscape). A portrait phone gets a squarer 4:3 so two
+// columns don't become slivers, and a lone participant gets a portrait tile
+// because that is the shape a phone camera actually produces.
+function targetAspect(container, n, specs){
+  // With a single tile there is no compromise to make: match the sender's real
+  // shape so nothing is cropped or letterboxed. object-fit:cover crops whatever
+  // doesn't match, and at full size that crop is very visible.
+  if(n===1 && specs && specs[0]){
+    const sp=specs[0];
+    const pub=sp.screen?screenPub(sp.p):cameraPub(sp.p);
+    const d=pub&&pub.pub&&pub.pub.dimensions;
+    if(d&&d.width&&d.height){
+      return Math.min(2.4,Math.max(0.5,d.width/d.height));
+    }
+  }
+  const portrait = container.h > container.w;
+  if(!portrait) return 16/9;
+  // Portrait viewport: a squarer tile keeps two columns from becoming slivers,
+  // and a lone participant gets the portrait shape a phone camera produces.
+  return n<=1 ? 3/4 : 4/3;
+}
+
+// Best (cols,rows) plus the exact tile box, maximising area under the target
+// shape. Returns {c,r,tw,th,fits}: fits=false means even the roomiest option is
+// too small to read, so the caller switches to a scrolling strip.
+function solveLayout(n, container, gap, ar, maxAR){
+  let best=null;
+  for(let c=1;c<=n;c++){
+    const r=Math.ceil(n/c);
+    const cellW=(container.w-gap*(c-1))/c;
+    const cellH=(container.h-gap*(r-1))/r;
+    if(cellW<=0||cellH<=0) continue;
+    // Fit the target shape inside the cell — letterbox, never stretch.
+    let tw=cellW, th=cellW/ar;
+    if(th>cellH){ th=cellH; tw=cellH*ar; }
+    const area=tw*th;
+    if(!best||area>best.area+0.5) best={c,r,tw,th,area,cellW,cellH};
+  }
+  // Claim spare width only AFTER the arrangement is chosen. Folding it into the
+  // comparison inflates the area of tall single-column stacks and biases the
+  // solver towards them — 5 people ended up in one column using 66% of the
+  // width instead of a sensible 2x3.
+  if(best && maxAR && best.tw<best.cellW){
+    best.tw=Math.min(best.cellW, best.th*maxAR);
+  }
+  if(!best) return {c:1,r:n,tw:container.w,th:container.w/ar,fits:false};
+  best.fits = best.tw>=MIN_TILE_W && best.th>=MIN_TILE_H;
+  return best;
+}
+
+// When nothing fits on one screen, pick the widest comfortable column count and
+// let the strip scroll — shrinking everyone to thumbnails is worse than paging.
+function scrollLayout(n, container, gap, ar){
+  let c=Math.max(1,Math.floor((container.w+gap)/(MIN_TILE_W+gap)));
+  c=Math.min(c,n);
+  const tw=(container.w-gap*(c-1))/c;
+  return {c, r:Math.ceil(n/c), tw, th:tw/ar, fits:false};
 }
 // Tiles persist across renders, keyed by identity. Rebuilding them wholesale on
 // every mute/camera event detached and re-attached every <video> in the room,
@@ -678,28 +740,42 @@ function renderGrid(){
   if(!hasPin) grid.classList.remove('pin-portrait');
 
   if(hasPin){
-    grid.style.gridTemplateColumns=''; grid.style.gridTemplateRows='';
+    // Clear everything the solver set inline, or a leftover pixel width from the
+    // grid view constrains the spotlight + filmstrip flex row.
+    grid.style.gridTemplateColumns=''; grid.style.gridTemplateRows=''; grid.style.gridAutoRows='';
+    grid.style.width=''; grid.style.gap='';
     grid.style.height='100%'; grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
   }else{
-    c=cols(n); const r=Math.ceil(n/c);
-    grid.style.gridTemplateColumns=`repeat(${c},1fr)`;
-    if(phone){
-      // Three full-width tiles at their natural shape overflow a phone screen,
-      // so at exactly 3 they shrink to share the height instead of scrolling.
-      fit = n===3;
-      grid.style.gridTemplateRows=`repeat(${r},${fit?'1fr':'auto'})`;
-      grid.style.height=fit?'100%':'auto';
-      grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
-    }else{
-      // Twice as many columns as tiles, each spanning two, so a short last row
-      // starts on a half-column and sits centred (5 = 3 up, 2 centred).
-      grid.style.gridTemplateColumns=`repeat(${c*2},1fr)`;
-      grid.style.gridTemplateRows=`repeat(${r},1fr)`;
-      grid.style.maxWidth=n<=1?'960px':'100%'; grid.style.aspectRatio=n<=1?'16/9':'auto'; grid.style.height='100%';
-      centred=true; rowCount=r;
-    }
+    const wrap=grid.parentElement;
+    const cs=getComputedStyle(wrap);
+    const box={
+      w: wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      h: wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+    };
+    const gap=phone?GAP_PHONE:GAP_DESKTOP;
+    const ar=targetAspect(box,n,ps);
+    // A single tile already matches its source exactly — don't stretch it.
+    // Landscape caps at 16:9 so desktop grids stay clean; portrait tolerates a
+    // little wider so stacked rows fill the screen instead of leaving margins.
+    const maxAR = n<=1 ? 0 : (box.h>box.w ? 1.9 : 16/9);
+    let L=solveLayout(n,box,gap,ar,maxAR);
+    if(!L.fits) L=scrollLayout(n,box,gap,ar);
+    c=L.c; rowCount=L.r; centred=true; fit=L.fits;
+
+    // Size the grid to the solved tiles so each cell is exactly tw x th; the
+    // doubled columns let a short last row start on a half-column and centre.
+    grid.style.gap=gap+'px';
+    grid.style.gridTemplateColumns=`repeat(${c*2},${(L.tw/2)}px)`;
+    grid.style.gridAutoRows=L.th+'px';
+    grid.style.gridTemplateRows='';
+    grid.style.width=(L.tw*c+gap*(c-1))+'px';
+    grid.style.height=L.fits?(L.th*L.r+gap*(L.r-1))+'px':'auto';
+    grid.style.maxWidth='100%'; grid.style.aspectRatio='auto';
   }
   grid.classList.toggle('fit',fit);
+  const scrollMode=!hasPin&&!fit;
+  grid.classList.toggle('scrolling',scrollMode);
+  grid.parentElement.classList.toggle('scrollmode',scrollMode);
 
   const mainEls=[], stripTiles=[];
   ps.forEach((spec,i)=>{
