@@ -562,16 +562,30 @@ function targetAspect(container, n, specs){
 // Best (cols,rows) plus the exact tile box, maximising area under the target
 // shape. Returns {c,r,tw,th,fits}: fits=false means even the roomiest option is
 // too small to read, so the caller switches to a scrolling strip.
-function solveLayout(n, container, gap, ar, maxAR){
+// Portrait screens fill their cells instead of letterboxing to a landscape
+// shape: a phone has narrow columns and plenty of height, so a "correct" 4:3
+// tile leaves most of the screen empty. Filling also happens to match what
+// phone cameras send (portrait), so it crops less than it appears. Clamped so a
+// cell can never produce a truly absurd sliver.
+const FILL_AR_MIN=0.5, FILL_AR_MAX=2.05;
+function solveLayout(n, container, gap, ar, maxAR, minCols, fill){
   let best=null;
-  for(let c=1;c<=n;c++){
+  for(let c=Math.max(1,minCols||1);c<=n;c++){
     const r=Math.ceil(n/c);
     const cellW=(container.w-gap*(c-1))/c;
     const cellH=(container.h-gap*(r-1))/r;
     if(cellW<=0||cellH<=0) continue;
-    // Fit the target shape inside the cell — letterbox, never stretch.
-    let tw=cellW, th=cellW/ar;
-    if(th>cellH){ th=cellH; tw=cellH*ar; }
+    let tw,th;
+    if(fill){
+      tw=cellW; th=cellH;
+      const cellAR=cellW/cellH;
+      if(cellAR>FILL_AR_MAX) tw=cellH*FILL_AR_MAX;          // too wide → letterbox
+      else if(cellAR<FILL_AR_MIN) th=cellW/FILL_AR_MIN;     // too tall → letterbox
+    }else{
+      // Fit the target shape inside the cell — letterbox, never stretch.
+      tw=cellW; th=cellW/ar;
+      if(th>cellH){ th=cellH; tw=cellH*ar; }
+    }
     const area=tw*th;
     if(!best||area>best.area+0.5) best={c,r,tw,th,area,cellW,cellH};
   }
@@ -579,7 +593,7 @@ function solveLayout(n, container, gap, ar, maxAR){
   // comparison inflates the area of tall single-column stacks and biases the
   // solver towards them — 5 people ended up in one column using 66% of the
   // width instead of a sensible 2x3.
-  if(best && maxAR && best.tw<best.cellW){
+  if(best && !fill && maxAR && best.tw<best.cellW){
     best.tw=Math.min(best.cellW, best.th*maxAR);
   }
   if(!best) return {c:1,r:n,tw:container.w,th:container.w/ar,fits:false};
@@ -605,14 +619,51 @@ let stripEl=null;
 // unpublish the publication can briefly still be present with a dead track —
 // attaching that paints a black tile that only cleared on the next full render
 // (which is why toggling the theme "fixed" it).
-function livePub(pub,isScr){
-  if(!pub||!pub.track||pub.isMuted) return null;
-  const mst=pub.track.mediaStreamTrack;
-  if(mst && mst.readyState!=='live') return null;
-  return {pub,track:pub.track,isScr};
+// Enumerate a participant's video publications and classify them by their own
+// source field, rather than asking getTrackPublication(Source.X). Remote
+// participants don't always resolve that lookup the way the local one does, and
+// when it missed, a presentation fell through into the camera slot — which is
+// why remote viewers saw the presenter *replaced* by their screen instead of
+// getting a second tile.
+function videoPubs(p){
+  const out=[];
+  const add=pub=>{
+    if(!pub) return;
+    const kind=pub.kind||(pub.track&&pub.track.kind);
+    if(kind&&String(kind).toLowerCase()!=='video') return;
+    if(!kind&&!pub.source) return;
+    out.push(pub);
+  };
+  const maps=[p.videoTrackPublications,p.trackPublications,p.tracks,p.videoTracks];
+  for(const m of maps){ if(m&&typeof m.forEach==='function'){ m.forEach(add); if(out.length) break; } }
+  return out;
 }
-function screenPub(p){ return livePub(p.getTrackPublication(LK.Track.Source.ScreenShare),true); }
-function cameraPub(p){ return livePub(p.getTrackPublication(LK.Track.Source.Camera),false); }
+function pubIsScreen(pub){
+  const src=pub.source||(pub.track&&pub.track.source)||'';
+  return String(src).toLowerCase().includes('screen');
+}
+// Publication exists (may not be subscribed yet) — enough to know someone is
+// presenting, so the tile and the spotlight can appear immediately.
+function screenPubAny(p){
+  const found=videoPubs(p).find(pubIsScreen);
+  if(found) return found;
+  try{ const direct=p.getTrackPublication&&p.getTrackPublication(LK.Track.Source.ScreenShare); if(direct) return direct; }catch{}
+  return null;
+}
+function isPlayable(pub){
+  if(!pub||!pub.track||pub.isMuted) return false;
+  const mst=pub.track.mediaStreamTrack;
+  return !(mst && mst.readyState!=='live');
+}
+function screenPub(p){
+  const pub=screenPubAny(p);
+  return isPlayable(pub)?{pub,track:pub.track,isScr:true}:null;
+}
+function cameraPub(p){
+  let pub=videoPubs(p).find(x=>!pubIsScreen(x));
+  if(!pub){ try{ pub=p.getTrackPublication&&p.getTrackPublication(LK.Track.Source.Camera); }catch{} }
+  return isPlayable(pub)?{pub,track:pub.track,isScr:false}:null;
+}
 
 // A presentation is its own tile, not a replacement for the presenter's camera —
 // so you keep seeing their face while their screen is up, exactly like Meet.
@@ -620,7 +671,7 @@ function cameraPub(p){ return livePub(p.getTrackPublication(LK.Track.Source.Came
 function renderables(){
   const out=[];
   parts().forEach(p=>{
-    if(screenPub(p)) out.push({key:p.identity+SCREEN_SUFFIX,p,screen:true});
+    if(screenPubAny(p)) out.push({key:p.identity+SCREEN_SUFFIX,p,screen:true});
     out.push({key:p.identity,p,screen:false});
   });
   return out;
@@ -676,6 +727,9 @@ function updateTile(el,spec,{local,isPinned,grid}){
   const av=el.querySelector('.tav');
   if(vsel||isScreen){ av.style.display='none'; }
   else{ av.style.cssText=avatarStyle(p.identity); av.textContent=initials(p.name||p.identity); }
+  // Screen publication announced but not yet subscribed: show a waiting state so
+  // the tile (and the spotlight) exist while the track is still arriving.
+  el.classList.toggle('waiting',isScreen&&!vsel);
 
   const mic=p.getTrackPublication(LK.Track.Source.Microphone);
   const micLive=!!(mic&&mic.track&&!mic.isMuted);
@@ -757,8 +811,9 @@ function renderGrid(){
     // A single tile already matches its source exactly — don't stretch it.
     // Landscape caps at 16:9 so desktop grids stay clean; portrait tolerates a
     // little wider so stacked rows fill the screen instead of leaving margins.
-    const maxAR = n<=1 ? 0 : (box.h>box.w ? 1.9 : 16/9);
-    let L=solveLayout(n,box,gap,ar,maxAR);
+    const portrait = box.h>box.w;
+    const maxAR = n<=1 ? 0 : (portrait ? 1.9 : 16/9);
+    let L=solveLayout(n,box,gap,ar,maxAR,1,portrait);
     if(!L.fits) L=scrollLayout(n,box,gap,ar);
     c=L.c; rowCount=L.r; centred=true; fit=L.fits;
 
@@ -816,7 +871,7 @@ const knownShares=new Set();
 function syncPresentations(){
   if(!room)return;
   const live=new Set();
-  parts().forEach(p=>{ if(screenPub(p)) live.add(p.identity); });
+  parts().forEach(p=>{ if(screenPubAny(p)) live.add(p.identity); });
 
   live.forEach(id=>{
     if(knownShares.has(id)) return;
