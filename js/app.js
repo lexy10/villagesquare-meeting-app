@@ -518,7 +518,7 @@ async function connectRoom(token, displayName, title, seedStream){
 
 function handleData(d,p){ const who=p?(p.name||p.identity):'Someone';
   if(d.t==='chat') addChat(d.name||who,d.text);
-  else if(d.t==='reaction') floatEmoji(d.emoji);
+  else if(d.t==='reaction') floatEmoji(d.emoji, d.name||who);
   else if(d.t==='pin'){ pinned=d.identity||''; renderGrid(); }
   else if(d.t==='hand'){ if(d.raised)handsUp.add(p?.identity); else handsUp.delete(p?.identity); renderGrid(); renderPeople(); if(d.raised)toast((d.name||who)+' raised their hand ✋'); }
 }
@@ -1067,8 +1067,17 @@ function updateDock(){
 
 // ---------- reactions ----------
 function toggleReact(){ document.getElementById('reactBar').classList.toggle('open'); document.getElementById('dReact').classList.toggle('accent'); }
-function react(e){ floatEmoji(e); publish({t:'reaction',emoji:e,name:room?.localParticipant?.name}); }
-function floatEmoji(e){ reactionSound(e); const st=document.querySelector('.mt-stage'); const el=document.createElement('div'); el.className='floatemoji'; el.textContent=e; el.style.left=(28+Math.random()*44)+'%'; st.appendChild(el); setTimeout(()=>el.remove(),3200); }
+function react(e){ const me=room?.localParticipant?.name||'You'; floatEmoji(e,me); publish({t:'reaction',emoji:e,name:me}); }
+function floatEmoji(e,name){
+  reactionSound(e);
+  const st=document.querySelector('.mt-stage');
+  const el=document.createElement('div'); el.className='floatemoji';
+  el.style.left=(28+Math.random()*44)+'%';
+  const em=document.createElement('span'); em.className='fe-emoji'; em.textContent=e;
+  el.appendChild(em);
+  if(name){ const lb=document.createElement('span'); lb.className='fe-name'; lb.textContent=name.split(' ')[0].slice(0,10); el.appendChild(lb); }
+  st.appendChild(el); setTimeout(()=>el.remove(),3200);
+}
 function publish(o){ if(!room)return; try{ room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(o)),{reliable:true}); }catch(e){ console.warn(e); } }
 
 // ---------- panels ----------
