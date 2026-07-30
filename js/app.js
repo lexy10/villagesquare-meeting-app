@@ -1075,7 +1075,7 @@ function floatEmoji(e,name){
   el.style.left=(28+Math.random()*44)+'%';
   const em=document.createElement('span'); em.className='fe-emoji'; em.textContent=e;
   el.appendChild(em);
-  if(name){ const lb=document.createElement('span'); lb.className='fe-name'; lb.textContent=name.split(' ')[0].slice(0,10); el.appendChild(lb); }
+  if(name){ const lb=document.createElement('span'); lb.className='fe-name'; lb.textContent=name; el.appendChild(lb); }
   st.appendChild(el); setTimeout(()=>el.remove(),3200);
 }
 function publish(o){ if(!room)return; try{ room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(o)),{reliable:true}); }catch(e){ console.warn(e); } }
