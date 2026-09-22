@@ -1,0 +1,73 @@
+import * as app from '../engine';
+
+export default function Landing() {
+  return (
+    <div className="screen active" id="landing">
+      <div className="lp-top">
+        <div className="vsmark"><img src="logo.png" alt="VillageSquare" /></div>
+        <div className="wordmark"><b>villagesquare</b> <span className="meet">meet</span></div>
+        <div className="sp"></div>
+        <span className="clock" id="lpClock"></span>
+        <button className="themebtn" onClick={() => app.toggleTheme()} title="Toggle theme" aria-label="Toggle light or dark theme"><span className="material-symbols-rounded t-light">light_mode</span><span className="material-symbols-rounded t-dark">dark_mode</span></button>
+        <div className="lp-avatar" id="lpAvatar">VS</div>
+      </div>
+
+      <div className="lp-body">
+        <div className="lp-left">
+          <div className="lp-badge"><span className="dot"></span> Live meetings on VillageSquare</div>
+          <h1>Gather your <em>village</em>, wherever you are</h1>
+          <p className="sub">Start a room, share one link, and everyone hops in with just their name. Real-time video, chat and reactions — powered by VillageSquare.</p>
+          <div className="lp-actions">
+            <div className="rejoin" id="rejoinCard" style={{ display: 'none' }}>
+              <span className="material-symbols-rounded rj-ico">sensors</span>
+              <div className="rj-txt"><b>Your meeting is still running</b><span id="rejoinRoom">—</span></div>
+              <button className="rj-btn" onClick={() => app.rejoinAsHost()}>Rejoin</button>
+            </div>
+            <div className="act-row">
+              <button className="btn-primary" onClick={() => app.goHostSignin()}><span className="material-symbols-rounded">video_call</span> Start a meeting</button>
+            </div>
+            <div className="act-row">
+              <div className="join-field">
+                <span className="material-symbols-rounded">keyboard</span>
+                <input id="joinCode" placeholder="Enter a meeting code" onInput={() => app.onCode()} onKeyDown={e => { if (e.key === 'Enter') app.goGuest(); }} />
+              </div>
+              <button className="btn-ghost" id="btnJoin" onClick={() => app.goGuest()} disabled>Join</button>
+            </div>
+            <p className="lp-note">Got a link from a host? Open it and just type your name.</p>
+          </div>
+        </div>
+        <div className="lp-right">
+          <svg className="hero" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="#1560d8" /><stop offset="1" stopColor="#00d4ff" />
+              </linearGradient>
+              <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#2b7cf0" /><stop offset="1" stopColor="#22d3ee" />
+              </linearGradient>
+            </defs>
+            <circle cx="210" cy="210" r="180" className="hero-bg" />
+            <circle cx="210" cy="210" r="180" fill="none" stroke="url(#g1)" strokeWidth="2" strokeDasharray="4 10" opacity=".5" />
+            <rect x="96" y="120" width="228" height="150" rx="20" fill="url(#g1)" />
+            <rect x="112" y="136" width="196" height="118" rx="12" fill="#0a1424" />
+            {/* tiles */}
+            <rect x="122" y="146" width="88" height="46" rx="8" fill="url(#g2)" />
+            <rect x="218" y="146" width="80" height="46" rx="8" fill="#1560d8" opacity=".85" />
+            <rect x="122" y="200" width="80" height="44" rx="8" fill="#22d3ee" opacity=".8" />
+            <rect x="210" y="200" width="88" height="44" rx="8" fill="url(#g2)" />
+            <circle cx="166" cy="169" r="13" fill="#fff" opacity=".95" />
+            <circle cx="258" cy="169" r="13" fill="#fff" opacity=".75" />
+            <circle cx="162" cy="222" r="12" fill="#fff" opacity=".8" />
+            <circle cx="254" cy="222" r="12" fill="#fff" opacity=".95" />
+            {/* control pill */}
+            <rect x="150" y="292" width="120" height="34" rx="17" fill="#0a1424" />
+            <circle cx="176" cy="309" r="9" fill="#22d3ee" />
+            <circle cx="210" cy="309" r="9" fill="#eaf1ff" />
+            <circle cx="244" cy="309" r="9" fill="#ea4b5a" />
+          </svg>
+        </div>
+      </div>
+      <div className="lp-foot">Connected to the VillageSquare live media network</div>
+    </div>
+  );
+}

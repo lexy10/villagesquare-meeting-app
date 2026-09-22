@@ -1,0 +1,20 @@
+/* ---------------------------------------------------------------------------
+   Audio-gate affordance (NEW — part of audio fix "a").
+   The original CSS in ../css/styles.css is reused verbatim and untouched; this
+   is the one new piece of UI the port adds, so it lives in its own tiny sheet.
+   It borrows the toast's placement/shadow and the primary button's gradient so
+   it reads as part of the existing design system.
+--------------------------------------------------------------------------- */
+.audio-gate{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%);
+  z-index:320;                       /* above toast, below nothing that matters */
+  display:none;align-items:center;gap:9px;
+  background:var(--grad);color:#fff;
+  font-family:'Inter';font-weight:700;font-size:14px;
+  padding:12px 20px;border-radius:14px;
+  box-shadow:0 14px 34px rgba(0,0,0,.35);
+  cursor:pointer;border:none;
+  max-width:90vw;
+}
+.audio-gate.show{display:inline-flex}
+.audio-gate .material-symbols-rounded{font-size:20px}
