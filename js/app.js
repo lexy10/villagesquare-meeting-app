@@ -193,7 +193,7 @@ async function startMeeting(){
       try{ seed=await navigator.mediaDevices.getUserMedia({video:true,audio:true}); }
       catch(e){ console.warn('host media capture failed',e); camOn=false; micOn=false; toast('Starting without camera/mic — you can enable them in the meeting.',4000); }
     }
-    const fd=new FormData(); fd.append('title',title); fd.append('category_id','38'); fd.append('privacy','everyone');
+    const fd=new FormData(); fd.append('title',title); fd.append('category_id','1'); fd.append('privacy','everyone');
     const d=await apiFetch('/livestreams/start',{method:'POST',multipart:true,body:fd});
     roomId = d.room_id; livekitUrl = d.livekit_url; livestreamUuid = d.uuid; myRole='host';
     rememberHostMeeting({uuid:livestreamUuid, roomId, title});
