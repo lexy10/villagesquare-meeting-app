@@ -1,7 +1,7 @@
 const LK = window.LivekitClient;
 
-// ---------- backend (fixed: staging) ----------
-const API_BASE = 'https://staging-api.villagesquare.io/v2';
+// ---------- backend (fixed: production) ----------
+const API_BASE = 'https://production-api.villagesquare.io/v2';
 function apiBase(){ return API_BASE; }
 
 // ---------- state ----------
