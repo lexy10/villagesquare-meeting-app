@@ -7,9 +7,15 @@ clap.mp3  — crowd applause, played when two or more people clap together.
             "crowd partying cheering applause all around" by kyles
             https://freesound.org/s/637468/
 
-laugh.mp3 — trimmed from "Laughter and clearing voice.ogg"
-            Wikimedia Commons · Public domain
-            https://commons.wikimedia.org/wiki/File:Laughter_and_clearing_voice.ogg
+laugh.mp3 — crowd laugh, played when two or more people send 😂 together.
+            Mix of two recordings:
+            "CRWDLaff_Short Hearty Laugh_ShaneVincent_GSC24_SpacedOmni-MK012.wav"
+            by ShaneVincent, CC0 (public domain dedication)
+            https://freesound.org/s/764286/
+            "big crowd laughter.wav" by Kyster, CC BY 4.0
+            https://freesound.org/s/124028/
+            https://creativecommons.org/licenses/by/4.0/
+            (trimmed, mixed, faded and loudness-normalised)
 
 Clips were trimmed, faded and loudness-normalised (-18 LUFS) for use as short
 in-call reaction cues. All other sounds (join/leave chimes, the other reactions,

@@ -9,7 +9,7 @@ import { canShareScreen, deviceError } from '../lib/devices';
 import { clock } from '../lib/format';
 import { releaseAllMediaElements, replayMediaElements } from '../lib/mediaElements';
 import { displayName, screenPubAny } from '../lib/participants';
-import { chime, clap, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
+import { chime, crowdReaction, isCrowdReaction, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
 import { forgetHostMeeting } from '../lib/storage';
 import { toast } from '../app/toast';
 
@@ -30,7 +30,7 @@ export type Vote = 'up' | 'down';
 export interface Poll { id: string; q: string; by: string; mine: boolean; votes: ReadonlyMap<string, Vote> }
 const isVote = (v: unknown): v is Vote => v === 'up' || v === 'down';
 
-const CLAP = '\u{1F44F}', PARTY = '\u{1F389}';
+const PARTY = '\u{1F389}';
 
 export interface MeetingSnapshot {
   status: 'idle' | 'connecting' | 'connected';
@@ -353,7 +353,7 @@ class MeetingStore {
   }
 
   private floatEmoji(emoji: string, name: string, from: string) {
-    if (emoji === CLAP) clap(from); else reactionSound(emoji);
+    if (isCrowdReaction(emoji)) crowdReaction(emoji, from); else reactionSound(emoji);
     const r = { id: ++this.seq, emoji, name, left: 28 + Math.random() * 44 };
     this.set({ reactions: [...this.snap.reactions, r], confetti: this.snap.confetti + (emoji === PARTY ? 1 : 0) });
     setTimeout(() => this.set({ reactions: this.snap.reactions.filter(x => x.id !== r.id) }), 3200);
