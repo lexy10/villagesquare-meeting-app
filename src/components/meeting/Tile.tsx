@@ -4,6 +4,7 @@ import type { Theme } from '../../lib/storage';
 import { avatarStyle, initials } from '../../lib/format';
 import { peekMediaElement } from '../../lib/mediaElements';
 import { displayName, type TileSpec, type VideoSel } from '../../lib/participants';
+import { STATUSES, type StatusId } from '../../meeting/store';
 import { Icon } from '../Brand';
 import MediaSlot from './MediaSlot';
 
@@ -17,7 +18,9 @@ interface Props {
   isPinned: boolean;
   isHost: boolean;
   speaking: boolean;
-  handUp: boolean;
+  /** Place in the raised-hand queue; 0 when the hand is down. */
+  handPos: number;
+  status?: StatusId;
   micOn: boolean;
   theme: Theme;
   gridColumn?: string;
@@ -25,7 +28,7 @@ interface Props {
   onPinAspect?: (a: Aspect) => void;
 }
 
-export default function Tile({ spec, video, audio, isLocal, isPinned, isHost, speaking, handUp, micOn, theme, gridColumn, onMore, onPinAspect }: Props) {
+export default function Tile({ spec, video, audio, isLocal, isPinned, isHost, speaking, handPos, status, micOn, theme, gridColumn, onMore, onPinAspect }: Props) {
   const { p, screen } = spec;
   const person = displayName(p);
   const name = screen ? (isLocal ? 'Your presentation' : `${person}'s presentation`) : person;
@@ -70,7 +73,14 @@ export default function Tile({ spec, video, audio, isLocal, isPinned, isHost, sp
       {videoTrack && <MediaSlot track={videoTrack} />}
       <div className="tav" style={showAvatar ? avatarStyle(p.identity, theme) : { display: 'none' }}>{initials(person)}</div>
       {/* Material icon rather than the ✋ emoji: the emoji's own yellow vanished on the yellow badge. */}
-      <div className={!screen && handUp ? 'thand show' : 'thand'}><Icon name="front_hand" /></div>
+      <div className={!screen && handPos ? 'thand show' : 'thand'}>
+        <Icon name="front_hand" />{handPos > 0 && <span className="thand-n">{handPos}</span>}
+      </div>
+      {!screen && status && (
+        <div className="tstatus" title={STATUSES[status].label}>
+          <span className="ts-emoji">{STATUSES[status].emoji}</span><span className="ts-label">{STATUSES[status].label}</span>
+        </div>
+      )}
       <div className="tname">
         {screen ? (
           <><Icon name="present_to_all" /><span className="nm">{name}</span></>

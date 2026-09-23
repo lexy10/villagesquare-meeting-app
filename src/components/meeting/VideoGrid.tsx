@@ -4,7 +4,7 @@ import { useApp } from '../../app/AppContext';
 import { GAP_DESKTOP, GAP_PHONE, isPhonePortrait, scrollLayout, solveLayout, targetAspect, type Box } from '../../lib/layout';
 import { pruneMediaElements } from '../../lib/mediaElements';
 import { cameraPub, micLive, micTrack, renderables, screenPub } from '../../lib/participants';
-import { useMeeting } from '../../meeting/store';
+import { handPosition, useMeeting } from '../../meeting/store';
 import Tile, { type Aspect } from './Tile';
 
 interface Props {
@@ -108,7 +108,8 @@ export default function VideoGrid({ onMore }: Props) {
         isPinned={isPinned}
         isHost={s.role === 'host'}
         speaking={s.speaking.has(spec.p.identity)}
-        handUp={s.handsUp.has(spec.p.identity)}
+        handPos={handPosition(s.handsUp, spec.p.identity)}
+        status={s.statuses.get(spec.p.identity)}
         micOn={micLive(spec.p)}
         theme={theme}
         gridColumn={gridColumn}

@@ -9,14 +9,28 @@ import { canShareScreen, deviceError } from '../lib/devices';
 import { clock } from '../lib/format';
 import { releaseAllMediaElements, replayMediaElements } from '../lib/mediaElements';
 import { displayName, screenPubAny } from '../lib/participants';
-import { chime, reactionSound, resumeAudioContext, warmReactionSamples } from '../lib/sounds';
+import { chime, clap, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
 import { forgetHostMeeting } from '../lib/storage';
 import { toast } from '../app/toast';
 
 export type Role = 'host' | 'guest';
 export type Panel = 'people' | 'chat';
-export interface ChatMsg { id: number; name: string; text: string; ts: string; mine: boolean }
+export interface ChatMsg { id: number; name: string; text: string; ts: string; mine: boolean; pollId?: string }
 export interface FloatingReaction { id: number; emoji: string; name: string; left: number }
+
+export type StatusId = 'brb' | 'listening' | 'noisy';
+export const STATUSES: Record<StatusId, { emoji: string; label: string }> = {
+  brb: { emoji: '☕', label: 'BRB' },
+  listening: { emoji: '🎧', label: 'Listening' },
+  noisy: { emoji: '🔇', label: 'Noisy room' },
+};
+const isStatus = (s: unknown): s is StatusId => typeof s === 'string' && Object.prototype.hasOwnProperty.call(STATUSES, s);
+
+export type Vote = 'up' | 'down';
+export interface Poll { id: string; q: string; by: string; mine: boolean; votes: ReadonlyMap<string, Vote> }
+const isVote = (v: unknown): v is Vote => v === 'up' || v === 'down';
+
+const CLAP = '\u{1F44F}', PARTY = '\u{1F389}';
 
 export interface MeetingSnapshot {
   status: 'idle' | 'connecting' | 'connected';
@@ -34,12 +48,17 @@ export interface MeetingSnapshot {
   handRaised: boolean;
   /** Tile key spotlighted for everyone ('' = none). */
   pinned: string;
-  handsUp: ReadonlySet<string>;
+  /** Raised hands: identity → when it went up (sender's clock), which orders the queue. */
+  handsUp: ReadonlyMap<string, number>;
+  statuses: ReadonlyMap<string, StatusId>;
   speaking: ReadonlySet<string>;
   chat: ChatMsg[];
+  polls: Readonly<Record<string, Poll>>;
   unread: number;
   panel: Panel | null;
   reactions: FloatingReaction[];
+  /** Bumped on every 🎉 so the confetti overlay knows to fire. */
+  confetti: number;
   /** False while the browser's autoplay policy is blocking remote audio. */
   canPlaybackAudio: boolean;
 }
@@ -61,20 +80,34 @@ export interface ConnectOptions {
 
 interface Handlers { onEnded: () => void }
 
+// `sync` marks state re-sent to someone who just joined: apply it quietly.
 type DataMsg =
   | { t: 'chat'; text: string; name?: string }
   | { t: 'reaction'; emoji: string; name?: string }
   | { t: 'pin'; identity?: string }
-  | { t: 'hand'; raised: boolean; name?: string };
+  | { t: 'hand'; raised: boolean; name?: string; at?: number; sync?: boolean }
+  | { t: 'status'; status: StatusId | '' }
+  | { t: 'poll'; id: string; q: string; name?: string; votes?: Record<string, Vote> }
+  | { t: 'vote'; id: string; v: Vote | null }
+  | { t: 'photo'; name?: string };
 
 const shareUrlFor = (roomId: string) => `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`;
+
+/** 1-based place in the raised-hand queue (first up = 1), or 0 when the hand is down. */
+export function handPosition(handsUp: ReadonlyMap<string, number>, identity: string): number {
+  const at = handsUp.get(identity);
+  if (at === undefined) return 0;
+  let n = 1;
+  handsUp.forEach((t, id) => { if (t < at || (t === at && id < identity)) n++; });
+  return n;
+}
 
 function idleSnapshot(): MeetingSnapshot {
   return {
     status: 'idle', room: null, participants: [], role: 'guest', roomId: '', title: '', shareUrl: '',
     livestreamUuid: '', micOn: true, camOn: true, sharing: false, handRaised: false, pinned: '',
-    handsUp: new Set(), speaking: new Set(), chat: [], unread: 0, panel: null, reactions: [],
-    canPlaybackAudio: true,
+    handsUp: new Map(), statuses: new Map(), speaking: new Set(), chat: [], polls: {}, unread: 0, panel: null,
+    reactions: [], confetti: 0, canPlaybackAudio: true,
   };
 }
 
@@ -155,10 +188,12 @@ class MeetingStore {
       if (this.snap.role === 'host' && this.snap.pinned) {
         setTimeout(() => this.publish({ t: 'pin', identity: this.snap.pinned }), 600);
       }
+      setTimeout(() => this.catchUp(p.identity), 600);
     });
     on(RoomEvent.ParticipantDisconnected, (p: Participant) => {
       chime('leave');
-      const handsUp = new Set(this.snap.handsUp); handsUp.delete(p.identity);
+      const handsUp = new Map(this.snap.handsUp); handsUp.delete(p.identity);
+      const statuses = new Map(this.snap.statuses); statuses.delete(p.identity);
       const speaking = new Set(this.snap.speaking); speaking.delete(p.identity);
       let pinned = this.snap.pinned;
       // Drop the spotlight if the pinned person is the one who left.
@@ -167,7 +202,7 @@ class MeetingStore {
         if (this.snap.role === 'host') this.publish({ t: 'pin', identity: '' });
       }
       this.knownShares.delete(p.identity);
-      this.set({ handsUp, speaking, pinned });
+      this.set({ handsUp, statuses, speaking, pinned });
       toast(`${displayName(p)} left`);
     });
     on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
@@ -270,37 +305,111 @@ class MeetingStore {
   }
 
   // ---------- data channel ----------
-  private publish(o: DataMsg) {
+  private publish(o: DataMsg, to?: string[]) {
     const room = this.room;
     if (!room) return;
-    room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(o)), { reliable: true })
+    room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(o)), { reliable: true, destinationIdentities: to })
       .catch(e => console.warn('publishData failed', e));
+  }
+
+  // Hands, statuses and polls live only in data messages, so someone joining
+  // mid-meeting hears about them from each owner directly.
+  private catchUp(identity: string) {
+    const room = this.room;
+    if (!room || !room.remoteParticipants.has(identity)) return;
+    const me = room.localParticipant, to = [identity];
+    const at = this.snap.handsUp.get(me.identity);
+    if (at) this.publish({ t: 'hand', raised: true, name: me.name, at, sync: true }, to);
+    const status = this.snap.statuses.get(me.identity);
+    if (status) this.publish({ t: 'status', status }, to);
+    Object.values(this.snap.polls).filter(p => p.mine)
+      .forEach(p => this.publish({ t: 'poll', id: p.id, q: p.q, name: p.by, votes: Object.fromEntries(p.votes) }, to));
   }
 
   private handleData(d: DataMsg, p?: Participant) {
     const who = p ? displayName(p) : 'Someone';
     if (d.t === 'chat') this.addChat(d.name || who, d.text, false);
-    else if (d.t === 'reaction') this.floatEmoji(d.emoji, d.name || who);
+    else if (d.t === 'reaction') this.floatEmoji(d.emoji, d.name || who, p?.identity || who);
     else if (d.t === 'pin') this.set({ pinned: d.identity || '' });
-    else if (d.t === 'hand' && p) {
-      const handsUp = new Set(this.snap.handsUp);
-      if (d.raised) handsUp.add(p.identity); else handsUp.delete(p.identity);
+    else if (d.t === 'photo') toast(`📸 ${d.name || who} took a group photo`);
+    else if (!p) return;
+    else if (d.t === 'hand') {
+      const handsUp = new Map(this.snap.handsUp);
+      if (d.raised) handsUp.set(p.identity, typeof d.at === 'number' ? d.at : Date.now()); else handsUp.delete(p.identity);
       this.set({ handsUp });
-      if (d.raised) toast(`${d.name || who} raised their hand ✋`);
+      if (d.raised && !d.sync) {
+        talkingDrum();
+        toast(`${d.name || who} raised their hand ✋`);
+      }
     }
+    else if (d.t === 'status') this.setStatusOf(p.identity, d.status);
+    else if (d.t === 'poll') this.receivePoll(d, p);
+    else if (d.t === 'vote') this.applyVote(d.id, p.identity, isVote(d.v) ? d.v : null);
   }
 
-  private addChat(name: string, text: string, mine: boolean) {
-    const chat = [...this.snap.chat, { id: ++this.seq, name, text, ts: clock(), mine }];
+  private addChat(name: string, text: string, mine: boolean, pollId?: string) {
+    const chat = [...this.snap.chat, { id: ++this.seq, name, text, ts: clock(), mine, pollId }];
     this.set({ chat, unread: this.snap.panel === 'chat' ? 0 : this.snap.unread + 1 });
   }
 
-  private floatEmoji(emoji: string, name: string) {
-    reactionSound(emoji);
+  private floatEmoji(emoji: string, name: string, from: string) {
+    if (emoji === CLAP) clap(from); else reactionSound(emoji);
     const r = { id: ++this.seq, emoji, name, left: 28 + Math.random() * 44 };
-    this.set({ reactions: [...this.snap.reactions, r] });
+    this.set({ reactions: [...this.snap.reactions, r], confetti: this.snap.confetti + (emoji === PARTY ? 1 : 0) });
     setTimeout(() => this.set({ reactions: this.snap.reactions.filter(x => x.id !== r.id) }), 3200);
   }
+
+  private setStatusOf(identity: string, status: unknown) {
+    const statuses = new Map(this.snap.statuses);
+    if (isStatus(status)) statuses.set(identity, status); else statuses.delete(identity);
+    this.set({ statuses });
+  }
+
+  // ---------- polls ----------
+  private startPoll(q: string) {
+    const room = this.room;
+    if (!room) return;
+    if (!q) { toast('Add a question, like /poll Ship on Friday?', 3600); return; }
+    const me = room.localParticipant, name = me.name || 'You';
+    // Prefixed with the creator's identity so nobody else can claim or reset it.
+    const id = `${me.identity}:${Date.now().toString(36)}`;
+    this.set({ polls: { ...this.snap.polls, [id]: { id, q, by: name, mine: true, votes: new Map() } } });
+    this.addChat(name, q, true, id);
+    this.publish({ t: 'poll', id, q, name });
+  }
+
+  private receivePoll(d: { id: string; q: string; name?: string; votes?: Record<string, Vote> }, p: Participant) {
+    if (typeof d.id !== 'string' || typeof d.q !== 'string' || !d.id.startsWith(`${p.identity}:`)) return;
+    const votes = new Map<string, Vote>();
+    Object.entries(d.votes || {}).forEach(([id, v]) => { if (isVote(v)) votes.set(id, v); });
+    const existing = this.snap.polls[d.id];
+    if (existing) {
+      existing.votes.forEach((v, id) => votes.set(id, v));
+      this.set({ polls: { ...this.snap.polls, [d.id]: { ...existing, votes } } });
+      return;
+    }
+    const by = d.name || displayName(p);
+    this.set({ polls: { ...this.snap.polls, [d.id]: { id: d.id, q: d.q.slice(0, 300), by, mine: false, votes } } });
+    this.addChat(by, d.q.slice(0, 300), false, d.id);
+    if (!d.votes && this.snap.panel !== 'chat') toast(`${by} started a poll 📊`);
+  }
+
+  private applyVote(id: string, identity: string, v: Vote | null) {
+    const poll = this.snap.polls[id];
+    if (!poll) return;
+    const votes = new Map(poll.votes);
+    if (v) votes.set(identity, v); else votes.delete(identity);
+    this.set({ polls: { ...this.snap.polls, [id]: { ...poll, votes } } });
+  }
+
+  /** Tapping your current choice again takes the vote back. */
+  vote = (id: string, v: Vote) => {
+    const room = this.room, poll = this.snap.polls[id];
+    if (!room || !poll) return;
+    const next = poll.votes.get(room.localParticipant.identity) === v ? null : v;
+    this.applyVote(id, room.localParticipant.identity, next);
+    this.publish({ t: 'vote', id, v: next });
+  };
 
   // Presentations take the spotlight for everyone, then hand it back when they
   // end. Each client detects this from its own view of the room, so it works
@@ -433,22 +542,37 @@ class MeetingStore {
     const room = this.room;
     if (!room) return;
     const handRaised = !this.snap.handRaised;
-    const handsUp = new Set(this.snap.handsUp);
-    if (handRaised) handsUp.add(room.localParticipant.identity); else handsUp.delete(room.localParticipant.identity);
-    this.publish({ t: 'hand', raised: handRaised, name: room.localParticipant.name });
+    const me = room.localParticipant, at = Date.now();
+    const handsUp = new Map(this.snap.handsUp);
+    if (handRaised) handsUp.set(me.identity, at); else handsUp.delete(me.identity);
+    this.publish({ t: 'hand', raised: handRaised, name: me.name, at });
     this.set({ handRaised, handsUp });
+    if (handRaised) talkingDrum();
     toast(handRaised ? 'You raised your hand ✋' : 'Hand lowered');
   };
 
   react = (emoji: string) => {
-    const me = this.room?.localParticipant.name || 'You';
-    this.floatEmoji(emoji, me);
+    const lp = this.room?.localParticipant;
+    const me = lp?.name || 'You';
+    this.floatEmoji(emoji, me, lp?.identity || me);
     this.publish({ t: 'reaction', emoji, name: me });
   };
+
+  setStatus = (status: StatusId | '') => {
+    const room = this.room;
+    if (!room) return;
+    this.setStatusOf(room.localParticipant.identity, status);
+    this.publish({ t: 'status', status });
+  };
+
+  /** Everyone hears when a photo is taken, so nobody is snapped unknowingly. */
+  announcePhoto = () => { this.publish({ t: 'photo', name: this.room?.localParticipant.name }); };
 
   sendChat = (text: string) => {
     const t = text.trim();
     if (!t) return;
+    const poll = /^\/poll(?:\s+([\s\S]*))?$/i.exec(t);
+    if (poll) { this.startPoll((poll[1] || '').trim()); return; }
     const name = this.room?.localParticipant.name || 'You';
     this.addChat(name, t, true);
     this.publish({ t: 'chat', text: t, name });

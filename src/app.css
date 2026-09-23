@@ -1,9 +1,7 @@
 /* ---------------------------------------------------------------------------
-   Styles the React version adds on top of ../css/styles.css.
-   The original CSS in ../css/styles.css is reused verbatim and untouched; this
-   is the one new piece of UI the port adds, so it lives in its own tiny sheet.
-   It borrows the toast's placement/shadow and the primary button's gradient so
-   it reads as part of the existing design system.
+   Styles added on top of ../css/styles.css, which is reused verbatim and left
+   untouched. Everything here borrows that sheet's tokens (--grad, --chip,
+   --line, …) so new UI reads as part of the existing design system.
 --------------------------------------------------------------------------- */
 .audio-gate{
   position:fixed;top:16px;left:50%;transform:translateX(-50%);
@@ -23,3 +21,63 @@
    src/lib/mediaElements.ts). `display: contents` removes the wrapper's own box,
    so the media element lays out as a direct child of the tile, as before. */
 .vsm-media{display:contents}
+
+/* ---------- raised-hand queue ---------- */
+.tile .thand-n{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#4a3600;color:#ffce3a;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #ffce3a}
+.person .pstat .phand{display:inline-flex;align-items:center;gap:1px;color:#ffce3a}
+.person .pstat .phand b{font-size:12px;font-weight:800}
+
+/* ---------- status (☕ BRB etc.) ---------- */
+.tile .tstatus{position:absolute;bottom:12px;right:12px;display:flex;align-items:center;gap:6px;background:rgba(6,14,28,.6);backdrop-filter:blur(8px);color:#fff;padding:5px 11px;border-radius:11px;font-size:12.5px;font-weight:600;max-width:calc(100% - 70px)}
+.tile .tstatus .ts-emoji{font-size:14px}
+.tile .tstatus .ts-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.filmstrip .tile .tstatus{bottom:7px;right:7px;padding:3px 7px}
+.filmstrip .tile .tstatus .ts-label{display:none}
+.person .pstat .pst-emoji{font-size:15px}
+#reactBar.open{flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px)}
+#reactBar .rb-status{flex-basis:100%;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;border-top:1px solid var(--line);padding-top:9px;margin-top:3px}
+#reactBar .rb-status button{width:auto;height:32px;padding:0 12px;border-radius:16px;font-size:12.5px;font-weight:600;font-family:'Inter';color:var(--ink);background:var(--chip)}
+#reactBar .rb-status button.on{background:var(--grad);color:#fff}
+#reactBar .rb-status button.clear{color:var(--muted)}
+@media (hover:hover){
+  #reactBar .rb-status button:hover{background:var(--chip-hi);transform:none}
+  #reactBar .rb-status button.on:hover{background:var(--grad)}
+}
+
+/* ---------- polls in chat ---------- */
+.cm .poll{margin-top:4px;background:var(--chip);border:1px solid var(--line);border-radius:14px;padding:11px 12px}
+.poll .poll-q{display:flex;gap:7px;align-items:flex-start;font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.35;word-break:break-word}
+.poll .poll-q .material-symbols-rounded{font-size:18px;color:var(--cyan);flex-shrink:0}
+.poll .poll-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.poll .poll-opt{position:relative;overflow:hidden;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:13.5px}
+.poll .poll-opt .po-bar{position:absolute;left:0;top:0;bottom:0;background:rgba(0,212,255,.18);transition:width .3s}
+.poll .poll-opt .po-emoji,.poll .poll-opt .po-n{position:relative}
+.poll .poll-opt .po-emoji{font-size:17px}
+.poll .poll-opt.voted{border-color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.poll .poll-foot{margin-top:8px;font-size:11.5px;color:#7f97bd;font-family:'Inter'}
+
+/* ---------- group photo ---------- */
+.mt-topbtn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--chip);flex-shrink:0;transition:background .15s,color .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.mt-topbtn .material-symbols-rounded{font-size:20px}
+.mt-topbtn:disabled{opacity:.5;cursor:default}
+@media (hover:hover){.mt-topbtn:not(:disabled):hover{background:var(--chip-hi);color:var(--ink)}}
+.photo-flash{position:absolute;inset:0;background:#fff;pointer-events:none;z-index:50;animation:photoflash .45s ease-out forwards}
+@keyframes photoflash{from{opacity:.85}to{opacity:0}}
+
+/* ---------- 🎉 confetti ---------- */
+.confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:300}
+
+/* ---------- proverb of the day ---------- */
+.lp-proverb{display:flex;gap:12px;align-items:flex-start;margin-top:30px;max-width:440px;padding:14px 16px;border-radius:16px;background:var(--chip);border:1px solid var(--line)}
+.lp-proverb .pv-mark{font-size:26px;color:var(--cyan);flex-shrink:0;margin-top:-2px}
+.lp-proverb .pv-native{font-size:13px;font-weight:700;font-style:italic;color:var(--ink);margin-bottom:3px}
+.lp-proverb blockquote{font-family:'Inter';font-size:14px;line-height:1.5;color:var(--ink)}
+.lp-proverb figcaption{margin-top:6px;font-size:11.5px;color:var(--muted);font-family:'Inter'}
+
+@media (max-width:600px){
+  .tile .tstatus{bottom:8px;right:8px;font-size:11px;padding:3px 8px}
+  .mt-topbtn{width:34px;height:34px}
+  .mt-topbtn .material-symbols-rounded{font-size:18px}
+  .lp-proverb{margin-top:22px;padding:12px 13px}
+  .lp-proverb blockquote{font-size:13px}
+}

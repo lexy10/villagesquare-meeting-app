@@ -3,6 +3,7 @@ import { useApp } from '../app/AppContext';
 import { useClock } from '../hooks/useClock';
 import { api } from '../lib/api';
 import { initials, normalizeRoom } from '../lib/format';
+import { proverbOfTheDay } from '../lib/proverbs';
 import { forgetHostMeeting, recallHostMeeting } from '../lib/storage';
 import { Icon, Logo, ThemeButton, Wordmark } from './Brand';
 
@@ -29,6 +30,7 @@ export default function Landing() {
   const [code, setCode] = useState('');
   const [checking, setChecking] = useState(false);
   const [rejoining, setRejoining] = useState(false);
+  const proverb = proverbOfTheDay();
 
   const join = async () => {
     const v = code.trim();
@@ -80,6 +82,14 @@ export default function Landing() {
             </div>
             <p className="lp-note">Got a link from a host? Open it and just type your name.</p>
           </div>
+          <figure className="lp-proverb">
+            <Icon name="format_quote" className="pv-mark" />
+            <div>
+              {proverb.native && <div className="pv-native">{proverb.native}</div>}
+              <blockquote>{proverb.text}</blockquote>
+              <figcaption>{proverb.origin} · proverb of the day</figcaption>
+            </div>
+          </figure>
         </div>
         <div className="lp-right">
           <svg className="hero" viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
