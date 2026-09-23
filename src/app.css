@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   Audio-gate affordance (NEW — part of audio fix "a").
+   Styles the React version adds on top of ../css/styles.css.
    The original CSS in ../css/styles.css is reused verbatim and untouched; this
    is the one new piece of UI the port adds, so it lives in its own tiny sheet.
    It borrows the toast's placement/shadow and the primary button's gradient so
@@ -18,3 +18,8 @@
 }
 .audio-gate.show{display:inline-flex}
 .audio-gate .material-symbols-rounded{font-size:20px}
+
+/* Wrapper a tile uses to host its cached <video>/<audio> element (see
+   src/lib/mediaElements.ts). `display: contents` removes the wrapper's own box,
+   so the media element lays out as a direct child of the tile, as before. */
+.vsm-media{display:contents}

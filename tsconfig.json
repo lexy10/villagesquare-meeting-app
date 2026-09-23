@@ -14,13 +14,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting — lenient on purpose: the meeting engine is ported imperative DOM
-       code (see src/engine.ts) where loose typing is intentional, not a mistake. */
-    "strict": false,
-    "noImplicitAny": false,
-    "strictNullChecks": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

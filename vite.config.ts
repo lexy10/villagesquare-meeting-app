@@ -14,5 +14,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // LiveKit is most of the bundle. Its own chunk stays cached across deploys
+    // that only change app code.
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: { manualChunks: { livekit: ['livekit-client'] } },
+    },
   },
 });

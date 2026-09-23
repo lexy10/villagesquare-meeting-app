@@ -1,39 +1,31 @@
-import { useEffect } from 'react';
-import Landing from './components/Landing';
-import HostSignin from './components/HostSignin';
+import { AppProvider, useApp } from './app/AppContext';
 import HostSetup from './components/HostSetup';
-import Prejoin from './components/Prejoin';
+import HostSignin from './components/HostSignin';
+import Landing from './components/Landing';
+import Meeting from './components/meeting/Meeting';
 import NotLive from './components/NotLive';
-import Meeting from './components/Meeting';
-import ShareModal from './components/ShareModal';
-import * as app from './engine';
+import { AudioGate, ShareModal, Toast } from './components/Overlays';
+import Prejoin from './components/Prejoin';
 
-// App renders the exact markup from the original index.html ONCE (every screen
-// is present in the DOM, toggled via the `.active` class exactly like before).
-// The imperative engine then drives that DOM. React owns the initial paint; the
-// engine owns all runtime mutation — mirroring how the vanilla app worked.
+function Screen() {
+  const { screen } = useApp();
+  switch (screen) {
+    case 'hostSignin': return <HostSignin />;
+    case 'hostSetup': return <HostSetup />;
+    case 'prejoin': return <Prejoin />;
+    case 'notlive': return <NotLive />;
+    case 'meeting': return <Meeting />;
+    default: return <Landing />;
+  }
+}
+
 export default function App() {
-  useEffect(() => {
-    app.initEngine();
-  }, []);
-
   return (
-    <>
-      <Landing />
-      <HostSignin />
-      <HostSetup />
-      <Prejoin />
-      <NotLive />
-      <Meeting />
-
-      {/* share modal + toast are body-level siblings in the original */}
+    <AppProvider>
+      <Screen />
       <ShareModal />
-      <div id="toast"></div>
-
-      {/* NEW: audio-gate affordance (autoplay fix "a") */}
-      <button id="audioGate" className="audio-gate" onClick={() => app.enableAudio()}>
-        <span className="material-symbols-rounded">volume_up</span> Tap to enable sound
-      </button>
-    </>
+      <Toast />
+      <AudioGate />
+    </AppProvider>
   );
 }
