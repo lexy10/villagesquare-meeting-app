@@ -104,7 +104,9 @@ class MeetingStore {
   // ---------- connect ----------
   connect = async (o: ConnectOptions) => {
     if (this.room) throw new Error('Already in a meeting');
-    const room = new Room({ adaptiveStream: true, dynacast: true });
+    // livekit-client 2.22 defaults to single-PC and tries /rtc/v1 first, which our
+    // 1.9.x server lacks (failed socket + 404 on every join). Revisit on upgrade.
+    const room = new Room({ adaptiveStream: true, dynacast: true, singlePeerConnection: false });
     this.room = room;
     this.authToken = o.authToken || '';
     this.knownShares.clear();
