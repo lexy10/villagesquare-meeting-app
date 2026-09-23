@@ -8,6 +8,7 @@ import { api } from '../lib/api';
 import { canShareScreen, deviceError } from '../lib/devices';
 import { clock } from '../lib/format';
 import { releaseAllMediaElements, replayMediaElements } from '../lib/mediaElements';
+import { watchMutedSpeech } from '../lib/mutedSpeech';
 import { displayName, screenPubAny } from '../lib/participants';
 import { chime, crowdReaction, isCrowdReaction, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
 import { forgetHostMeeting } from '../lib/storage';
@@ -59,6 +60,8 @@ export interface MeetingSnapshot {
   reactions: FloatingReaction[];
   /** Bumped on every 🎉 so the confetti overlay knows to fire. */
   confetti: number;
+  /** Showing the "You're muted" nudge: you were talking with the mic off. */
+  mutedNudge: boolean;
   /** False while the browser's autoplay policy is blocking remote audio. */
   canPlaybackAudio: boolean;
 }
@@ -107,7 +110,7 @@ function idleSnapshot(): MeetingSnapshot {
     status: 'idle', room: null, participants: [], role: 'guest', roomId: '', title: '', shareUrl: '',
     livestreamUuid: '', micOn: true, camOn: true, sharing: false, handRaised: false, pinned: '',
     handsUp: new Map(), statuses: new Map(), speaking: new Set(), chat: [], polls: {}, unread: 0, panel: null,
-    reactions: [], confetti: 0, canPlaybackAudio: true,
+    reactions: [], confetti: 0, mutedNudge: false, canPlaybackAudio: true,
   };
 }
 
@@ -122,12 +125,20 @@ class MeetingStore {
   private camBusy = false;
   private applyingLocalMedia = false;
   private seq = 0;
+  private stopMutedWatch: (() => void) | null = null;
+  private lastNudgeAt = 0;
+  private nudgeTimer = 0;
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.snap;
   setHandlers(h: Handlers) { this.handlers = h; }
 
-  private replace(next: MeetingSnapshot) { this.snap = next; this.listeners.forEach(l => l()); }
+  private replace(next: MeetingSnapshot) {
+    const prev = this.snap;
+    this.snap = next;
+    if (prev.micOn !== next.micOn || prev.status !== next.status) this.syncMutedWatch();
+    this.listeners.forEach(l => l());
+  }
   private set(patch: Partial<MeetingSnapshot>) { this.replace({ ...this.snap, ...patch }); }
   private parts(): Participant[] {
     const r = this.room;
@@ -439,6 +450,42 @@ class MeetingStore {
     return pinned;
   }
 
+  // ---------- "you're muted" nudge ----------
+  // Listen for talking only while connected with the mic off; any change of
+  // mic or connection state re-evaluates this (see replace()).
+  private syncMutedWatch() {
+    const room = this.room;
+    if (!room || this.snap.status !== 'connected' || this.snap.micOn) {
+      this.stopMutedWatch?.();
+      this.stopMutedWatch = null;
+      return;
+    }
+    if (this.stopMutedWatch) return;
+    const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
+    if (!track || track.readyState !== 'live') return;
+    try {
+      this.lastNudgeAt = 0;
+      this.stopMutedWatch = watchMutedSpeech(track, this.nudgeMuted);
+    } catch (e) {
+      console.warn('muted-speech watch unavailable', e);
+    }
+  }
+
+  private nudgeMuted = () => {
+    const room = this.room;
+    const now = Date.now();
+    if (!room || this.snap.micOn || now - this.lastNudgeAt < 60_000) return;
+    // BRB / noisy room means the mute is deliberate.
+    const status = this.snap.statuses.get(room.localParticipant.identity);
+    if (status === 'brb' || status === 'noisy') return;
+    this.lastNudgeAt = now;
+    this.set({ mutedNudge: true });
+    window.clearTimeout(this.nudgeTimer);
+    this.nudgeTimer = window.setTimeout(() => this.set({ mutedNudge: false }), 6000);
+  };
+
+  dismissNudge = () => { window.clearTimeout(this.nudgeTimer); this.set({ mutedNudge: false }); };
+
   // ---------- dock controls ----------
   // Toggles hit getUserMedia when switching ON, which can reject (denied prompt,
   // device busy). The flag only sticks if the device call succeeded, and `busy`
@@ -636,6 +683,7 @@ class MeetingStore {
     this.knownShares.clear();
     this.micBusy = false;
     this.camBusy = false;
+    window.clearTimeout(this.nudgeTimer);
     this.replace(idleSnapshot());
     if (wasConnected) this.handlers.onEnded();
   }

@@ -3,7 +3,7 @@
 // when the tab is backgrounded, so every entry point resumes it first.
 let actx: AudioContext | null = null;
 
-function ctx(): AudioContext {
+export function ctx(): AudioContext {
   actx = actx || new (window.AudioContext || (window as any).webkitAudioContext)();
   if (actx.state === 'suspended') actx.resume().catch(() => {});
   return actx;

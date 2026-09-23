@@ -13,9 +13,18 @@ export default function Dock({ reactOpen, onToggleReact, onLeave }: Props) {
   const shareOk = canShareScreen();
   const btn = (base: string, flag: boolean, mod: string) => (flag ? `${base} ${mod}` : base);
 
+  const nudge = s.mutedNudge && !s.micOn;
+
   return (
     <div className="mt-dock">
-      <button className={btn('dbtn', !s.micOn, 'off')} onClick={() => void meeting.toggleMic()} title="Microphone">
+      {nudge && (
+        <div className="muted-nudge" role="status">
+          <Icon name="mic_off" /><span>You’re muted</span>
+          <button onClick={() => { meeting.dismissNudge(); void meeting.toggleMic(); }}>Unmute</button>
+          <button className="mn-x" onClick={meeting.dismissNudge} aria-label="Dismiss"><Icon name="close" /></button>
+        </div>
+      )}
+      <button className={btn(nudge ? 'dbtn nudge' : 'dbtn', !s.micOn, 'off')} onClick={() => void meeting.toggleMic()} title="Microphone">
         <Icon name={s.micOn ? 'mic' : 'mic_off'} />
       </button>
       <button className={btn('dbtn', !s.camOn, 'off')} onClick={() => void meeting.toggleCam()} title="Camera">
