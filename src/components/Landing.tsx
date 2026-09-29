@@ -39,7 +39,7 @@ export default function Landing() {
     try { await app.checkAndProceed(normalizeRoom(v)); } finally { setChecking(false); }
   };
 
-  const startMeeting = () => app.show(app.token ? 'hostSetup' : 'hostSignin');
+  const startMeeting = () => app.show(app.signedIn ? 'hostSetup' : 'hostSignin');
 
   const doRejoin = async () => {
     setRejoining(true);

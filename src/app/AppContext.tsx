@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api } from '../lib/api';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api, ApiError, hasHostSession, onHostSignedOut, setHostSession } from '../lib/api';
 import { forgetHostMeeting, loadTheme, recallHostMeeting, saveTheme, type Theme } from '../lib/storage';
 import { meeting } from '../meeting/store';
 import { toast } from './toast';
@@ -11,12 +11,12 @@ interface AppValue {
   show: (s: ScreenId) => void;
   theme: Theme;
   toggleTheme: () => void;
-  /** Host bearer token ('' = not signed in). Only ever held in memory. */
-  token: string;
+  /** Host is signed in. The tokens themselves stay in memory in lib/api. */
+  signedIn: boolean;
   email: string;
   /** Display name for the host: the local part of their sign-in email. */
   hostName: string;
-  setAuth: (token: string, email: string) => void;
+  setAuth: (accessToken: string, refreshToken: string, email: string) => void;
   /** Room a guest is about to join (from a code, a link, or meeting-status). */
   pendingRoom: string;
   pendingTitle: string;
@@ -24,7 +24,7 @@ interface AppValue {
   checkAndProceed: (room: string) => Promise<void>;
   pendingRejoin: boolean;
   setPendingRejoin: (v: boolean) => void;
-  rejoinAsHost: (tokenOverride?: string) => Promise<void>;
+  rejoinAsHost: () => Promise<void>;
   shareOpen: boolean;
   setShareOpen: (v: boolean) => void;
 }
@@ -44,10 +44,7 @@ function initialTheme(): Theme {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [screen, setScreen] = useState<ScreenId>('landing');
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [auth, setAuthState] = useState({ token: '', email: '' });
-  // Actions that run right after sign-in must see the new token before React
-  // re-renders, so it is mirrored into a ref.
-  const tokenRef = useRef('');
+  const [auth, setAuthState] = useState({ signedIn: false, email: '' });
   const [pendingRoom, setPendingRoom] = useState('');
   const [pendingTitle, setPendingTitle] = useState('');
   const [pendingRejoin, setPendingRejoin] = useState(false);
@@ -64,9 +61,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTheme(t => { const next = t === 'light' ? 'dark' : 'light'; saveTheme(next); return next; });
   }, []);
 
-  const setAuth = useCallback((token: string, email: string) => {
-    tokenRef.current = token;
-    setAuthState({ token, email });
+  const setAuth = useCallback((accessToken: string, refreshToken: string, email: string) => {
+    setHostSession(accessToken, refreshToken);
+    setAuthState({ signedIn: true, email });
+  }, []);
+
+  useEffect(() => {
+    onHostSignedOut(() => setAuthState(a => ({ ...a, signedIn: false })));
   }, []);
 
   const checkAndProceed = useCallback(async (raw: string) => {
@@ -90,15 +91,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const hostName = auth.email.split('@')[0] || 'Host';
 
-  const rejoinAsHost = useCallback(async (tokenOverride?: string) => {
+  const rejoinAsHost = useCallback(async () => {
     const m = recallHostMeeting();
     if (!m?.uuid) return;
-    const token = tokenOverride || tokenRef.current;
     // Rejoining as host is authenticated — route through sign-in and come back.
-    if (!token) {
+    const signInFirst = (message: string) => {
       setPendingRejoin(true);
       setScreen('hostSignin');
-      toast('Sign in to rejoin as host');
+      toast(message);
+    };
+    if (!hasHostSession()) {
+      signInFirst('Sign in to rejoin as host');
       return;
     }
     let seed: MediaStream | null = null;
@@ -106,16 +109,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       try { seed = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
       catch { micOn = false; camOn = false; }
-      const d = await api.hostJoin(m.uuid, token);
+      const d = await api.hostJoin(m.uuid);
       if (!d.token || !d.livekit_url) throw new Error('No media token returned');
       await meeting.connect({
         token: d.token, livekitUrl: d.livekit_url, title: m.title || 'Meeting', seed, role: 'host',
-        roomId: d.room_id || m.roomId, livestreamUuid: m.uuid, micOn, camOn, authToken: token,
+        roomId: d.room_id || m.roomId, livestreamUuid: m.uuid, micOn, camOn,
       });
       seed = null; // ownership transferred to LiveKit
       setScreen('meeting');
     } catch (e) {
       seed?.getTracks().forEach(t => t.stop());
+      if (e instanceof ApiError && e.status === 401) { signInFirst(e.message); return; }
       const msg = (e as Error).message || '';
       // A meeting that has since ended shouldn't keep offering a dead button.
       if (/not live|not found|ended|denied/i.test(msg)) forgetHostMeeting();
@@ -147,7 +151,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AppValue>(() => ({
-    screen, show, theme, toggleTheme, token: auth.token, email: auth.email, hostName, setAuth,
+    screen, show, theme, toggleTheme, signedIn: auth.signedIn, email: auth.email, hostName, setAuth,
     pendingRoom, pendingTitle, checkAndProceed, pendingRejoin, setPendingRejoin, rejoinAsHost,
     shareOpen, setShareOpen,
   }), [screen, show, theme, toggleTheme, auth, hostName, setAuth, pendingRoom, pendingTitle, checkAndProceed,

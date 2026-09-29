@@ -77,8 +77,6 @@ export interface ConnectOptions {
   livestreamUuid?: string;
   micOn: boolean;
   camOn: boolean;
-  /** Host bearer token for moderation / end calls. */
-  authToken?: string;
 }
 
 interface Handlers { onEnded: () => void }
@@ -119,7 +117,6 @@ class MeetingStore {
   private listeners = new Set<() => void>();
   private handlers: Handlers = { onEnded: () => {} };
   private room: Room | null = null;
-  private authToken = '';
   private knownShares = new Set<string>();
   private micBusy = false;
   private camBusy = false;
@@ -152,7 +149,6 @@ class MeetingStore {
     // 1.9.x server lacks (failed socket + 404 on every join). Revisit on upgrade.
     const room = new Room({ adaptiveStream: true, dynacast: true, singlePeerConnection: false });
     this.room = room;
-    this.authToken = o.authToken || '';
     this.knownShares.clear();
     this.replace({
       ...idleSnapshot(), status: 'connecting', room, role: o.role, roomId: o.roomId, title: o.title || 'Meeting',
@@ -642,7 +638,7 @@ class MeetingStore {
   // server-side; a client that ignores the request is still muted or removed.
   moderate = async (identity: string, action: 'mute' | 'stop_video' | 'remove', label: string) => {
     try {
-      await api.moderate(this.snap.roomId, identity, action, this.authToken);
+      await api.moderate(this.snap.roomId, identity, action);
       toast(label);
     } catch (e) {
       toast(`Could not ${action.replace('_', ' ')}: ${(e as Error).message}`, 4000);
@@ -654,7 +650,7 @@ class MeetingStore {
 
   end = async () => {
     try {
-      await api.end(this.snap.livestreamUuid, this.authToken);
+      await api.end(this.snap.livestreamUuid);
       forgetHostMeeting();
       toast('Meeting ended for everyone');
       void this.room?.disconnect();
@@ -679,7 +675,6 @@ class MeetingStore {
     document.removeEventListener('visibilitychange', this.onVisibility);
     releaseAllMediaElements();
     this.room = null;
-    this.authToken = '';
     this.knownShares.clear();
     this.micBusy = false;
     this.camBusy = false;

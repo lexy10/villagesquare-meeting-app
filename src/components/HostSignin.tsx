@@ -23,11 +23,11 @@ export default function HostSignin() {
       const d = await api.login(e, password);
       const token = d.access_token || d.accessToken || d.token || '';
       if (!token) throw new Error('No access token in response');
-      app.setAuth(token, e);
+      app.setAuth(token, d.refresh_token || '', e);
       if (app.pendingRejoin) {
         app.setPendingRejoin(false);
         app.show('landing');
-        await app.rejoinAsHost(token);
+        await app.rejoinAsHost();
         return;
       }
       app.show('hostSetup');

@@ -43,12 +43,12 @@ export default function HostSetup() {
       form.append('title', t);
       form.append('category_id', MEETING_CATEGORY_ID);
       form.append('privacy', 'everyone');
-      const d = await api.start(form, app.token);
+      const d = await api.start(form);
       if (d.uuid && d.room_id) rememberHostMeeting({ uuid: d.uuid, roomId: d.room_id, title: t });
       if (!d.token || !d.livekit_url || !d.room_id) throw new Error('Meeting started but no media token was returned');
       await meeting.connect({
         token: d.token, livekitUrl: d.livekit_url, title: t, seed, role: 'host', roomId: d.room_id,
-        livestreamUuid: d.uuid, micOn, camOn, authToken: app.token,
+        livestreamUuid: d.uuid, micOn, camOn,
       });
       seed = null; // ownership transferred to LiveKit
       app.setShareOpen(true);
