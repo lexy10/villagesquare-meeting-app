@@ -21,13 +21,13 @@ export default function Prejoin() {
     setBusy(true);
     let seed: MediaStream | null = null;
     try {
-      const d = await api.guestToken(app.pendingRoom, trimmed);
-      if (!d.token || !d.livekit_url || !d.room_id) throw new Error('No media token returned');
+      const d = await api.guestJoin(app.pendingRoom, trimmed);
+      if (!d.token || !d.livekit_url) throw new Error('No media token returned');
       const micOn = pv.micOn, camOn = pv.camOn;
       // Hand the already-permitted preview tracks to LiveKit rather than stopping
       // them — re-acquiring the mic is what breaks on iOS.
       seed = pv.takeStream();
-      await meeting.connect({ token: d.token, livekitUrl: d.livekit_url, title: 'Meeting', seed, role: 'guest', roomId: d.room_id, micOn, camOn });
+      await meeting.connect({ token: d.token, livekitUrl: d.livekit_url, title: d.title || 'Meeting', seed, role: 'guest', code: d.code, meetingId: d.uuid, micOn, camOn });
       seed = null; // ownership transferred to LiveKit
       app.show('meeting');
     } catch (e) {

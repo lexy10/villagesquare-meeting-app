@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError, hasHostSession, onHostSignedOut, setHostSession } from '../lib/api';
 import { forgetHostMeeting, loadTheme, recallHostMeeting, saveTheme, type Theme } from '../lib/storage';
+import { pmFromWire } from '../meeting/pm';
 import { meeting } from '../meeting/store';
 import { toast } from './toast';
 
@@ -70,6 +71,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     onHostSignedOut(() => setAuthState(a => ({ ...a, signedIn: false })));
   }, []);
 
+  useEffect(() => {
+    const preview = new URLSearchParams(location.search).get('preview');
+    if (!import.meta.env.DEV || preview === null) return;
+    if (preview === 'setup') { setScreen('hostSetup'); return; }
+    void import('../dev/preview').then(m => { m.startPreview(); setScreen('meeting'); });
+  }, []);
+
   const checkAndProceed = useCallback(async (raw: string) => {
     const room = (raw || '').trim();
     if (!room) return;
@@ -80,7 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Fail open: only block on a DEFINITIVE not-live. guest-token is the source
       // of truth and reports "not live" itself if the room really isn't.
       if (d && d.live === false) { setScreen('notlive'); return; }
-      if (d?.room_id) setPendingRoom(d.room_id);
+      if (d?.code) setPendingRoom(d.code);
       if (d?.title) setPendingTitle(d.title);
       setScreen('prejoin');
     } catch (e) {
@@ -112,8 +120,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const d = await api.hostJoin(m.uuid);
       if (!d.token || !d.livekit_url) throw new Error('No media token returned');
       await meeting.connect({
-        token: d.token, livekitUrl: d.livekit_url, title: m.title || 'Meeting', seed, role: 'host',
-        roomId: d.room_id || m.roomId, livestreamUuid: m.uuid, micOn, camOn,
+        token: d.token, livekitUrl: d.livekit_url, title: d.title || m.title || 'Meeting', seed, role: 'host',
+        code: d.code || m.code, meetingId: d.uuid, micOn, camOn,
+        pm: d.settings ? pmFromWire(d.settings) : undefined, pmAvailable: !!d.assistant_available,
       });
       seed = null; // ownership transferred to LiveKit
       setScreen('meeting');

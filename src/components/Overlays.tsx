@@ -35,7 +35,7 @@ export function ShareModal() {
         <h2>Your meeting is live</h2>
         <p>Share this link — anyone who opens it just types their name to join.</p>
         <div className="linkbox"><input ref={linkRef} readOnly value={s.shareUrl} /><button onClick={copy}>Copy link</button></div>
-        <div className="codebig">Meeting code · <b>{s.roomId || '—'}</b></div>
+        <div className="codebig">Meeting code · <b>{s.code || '—'}</b></div>
         <button className="btn-primary enter" onClick={() => setShareOpen(false)}><Icon name="meeting_room" /> Enter meeting</button>
       </div>
     </div>

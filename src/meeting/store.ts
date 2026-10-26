@@ -10,8 +10,9 @@ import { clock } from '../lib/format';
 import { releaseAllMediaElements, replayMediaElements } from '../lib/mediaElements';
 import { watchMutedSpeech } from '../lib/mutedSpeech';
 import { displayName, screenPubAny } from '../lib/participants';
-import { chime, crowdReaction, isCrowdReaction, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
+import { chime, crowdReaction, isCrowdReaction, messageSound, reactionSound, resumeAudioContext, talkingDrum, warmReactionSamples } from '../lib/sounds';
 import { forgetHostMeeting } from '../lib/storage';
+import { PM_IDENTITY, pmToWire, type PmMsg, type PmSettings, type PmView } from './pm';
 import { toast } from '../app/toast';
 
 export type Role = 'host' | 'guest';
@@ -32,6 +33,8 @@ export interface Poll { id: string; q: string; by: string; mine: boolean; votes:
 const isVote = (v: unknown): v is Vote => v === 'up' || v === 'down';
 
 const PARTY = '\u{1F389}';
+// The PM's voice track, published by the PM participant.
+export const PM_TRACK = 'vsm-pm';
 
 export interface MeetingSnapshot {
   status: 'idle' | 'connecting' | 'connected';
@@ -39,10 +42,12 @@ export interface MeetingSnapshot {
   /** Local participant first, then everyone else. Re-derived on every room event. */
   participants: Participant[];
   role: Role;
-  roomId: string;
+  /** Share code (what guests type or open as ?room=…). */
+  code: string;
   title: string;
   shareUrl: string;
-  livestreamUuid: string;
+  /** The meeting's uuid: what the host's actions are addressed to. */
+  meetingId: string;
   micOn: boolean;
   camOn: boolean;
   sharing: boolean;
@@ -64,6 +69,19 @@ export interface MeetingSnapshot {
   mutedNudge: boolean;
   /** False while the browser's autoplay policy is blocking remote audio. */
   canPlaybackAudio: boolean;
+  /** The PM participant is in the room (its tile shows while check-in is on). */
+  pmHere: boolean;
+  /** Latecomer check-in is on, and from when people count as late (epoch ms). */
+  pmCheckIn: boolean;
+  pmLateAfter: number | null;
+  /** The PM's check-in in progress, as everyone sees it. */
+  pm: PmView | null;
+  /** The PM paused my mic and will hand it back. */
+  pmPausedMe: boolean;
+  /** Host only: latecomer check-in settings for this meeting. */
+  pmSettings: PmSettings | null;
+  /** The meeting PM is switched on platform-wide (admin setting). */
+  pmAvailable: boolean;
 }
 
 export interface ConnectOptions {
@@ -73,10 +91,13 @@ export interface ConnectOptions {
   /** Tracks already granted in the pre-join preview; handed straight to LiveKit. */
   seed: MediaStream | null;
   role: Role;
-  roomId: string;
-  livestreamUuid?: string;
+  code: string;
+  meetingId: string;
   micOn: boolean;
   camOn: boolean;
+  /** Host only: latecomer check-in, and whether the PM is available at all. */
+  pm?: PmSettings;
+  pmAvailable?: boolean;
 }
 
 interface Handlers { onEnded: () => void }
@@ -90,9 +111,10 @@ type DataMsg =
   | { t: 'status'; status: StatusId | '' }
   | { t: 'poll'; id: string; q: string; name?: string; votes?: Record<string, Vote> }
   | { t: 'vote'; id: string; v: Vote | null }
-  | { t: 'photo'; name?: string };
+  | { t: 'photo'; name?: string }
+  | PmMsg;
 
-const shareUrlFor = (roomId: string) => `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`;
+const shareUrlFor = (code: string) => `${location.origin}${location.pathname}?room=${encodeURIComponent(code)}`;
 
 /** 1-based place in the raised-hand queue (first up = 1), or 0 when the hand is down. */
 export function handPosition(handsUp: ReadonlyMap<string, number>, identity: string): number {
@@ -105,10 +127,12 @@ export function handPosition(handsUp: ReadonlyMap<string, number>, identity: str
 
 function idleSnapshot(): MeetingSnapshot {
   return {
-    status: 'idle', room: null, participants: [], role: 'guest', roomId: '', title: '', shareUrl: '',
-    livestreamUuid: '', micOn: true, camOn: true, sharing: false, handRaised: false, pinned: '',
+    status: 'idle', room: null, participants: [], role: 'guest', code: '', title: '', shareUrl: '',
+    meetingId: '', micOn: true, camOn: true, sharing: false, handRaised: false, pinned: '',
     handsUp: new Map(), statuses: new Map(), speaking: new Set(), chat: [], polls: {}, unread: 0, panel: null,
     reactions: [], confetti: 0, mutedNudge: false, canPlaybackAudio: true,
+    pmHere: false, pmCheckIn: false, pmLateAfter: null,
+    pm: null, pmPausedMe: false, pmSettings: null, pmAvailable: false,
   };
 }
 
@@ -125,6 +149,7 @@ class MeetingStore {
   private stopMutedWatch: (() => void) | null = null;
   private lastNudgeAt = 0;
   private nudgeTimer = 0;
+  private pmFailsafe = 0;
 
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.snap;
@@ -139,7 +164,8 @@ class MeetingStore {
   private set(patch: Partial<MeetingSnapshot>) { this.replace({ ...this.snap, ...patch }); }
   private parts(): Participant[] {
     const r = this.room;
-    return r ? [r.localParticipant, ...r.remoteParticipants.values()] : [];
+    // The PM has its own tile; it isn't one of the people.
+    return r ? [r.localParticipant, ...[...r.remoteParticipants.values()].filter(p => p.identity !== PM_IDENTITY)] : [];
   }
 
   // ---------- connect ----------
@@ -151,8 +177,9 @@ class MeetingStore {
     this.room = room;
     this.knownShares.clear();
     this.replace({
-      ...idleSnapshot(), status: 'connecting', room, role: o.role, roomId: o.roomId, title: o.title || 'Meeting',
-      shareUrl: shareUrlFor(o.roomId), livestreamUuid: o.livestreamUuid || '', micOn: o.micOn, camOn: o.camOn,
+      ...idleSnapshot(), status: 'connecting', room, role: o.role, code: o.code, title: o.title || 'Meeting',
+      shareUrl: shareUrlFor(o.code), meetingId: o.meetingId, micOn: o.micOn, camOn: o.camOn,
+      pmAvailable: !!o.pmAvailable,
     });
     this.wire(room);
     try {
@@ -168,6 +195,8 @@ class MeetingStore {
     this.set({ status: 'connected', participants: this.parts(), canPlaybackAudio: room.canPlaybackAudio });
     warmReactionSamples();
     toast('You joined the meeting');
+    if (o.role === 'host' && o.pm && o.pmAvailable) this.set({ pmSettings: o.pm });
+    this.syncPm();
   };
 
   private wire(room: Room) {
@@ -176,6 +205,7 @@ class MeetingStore {
     const refresh = () => {
       const pinned = this.syncPresentations();
       this.set({ participants: this.parts(), pinned, sharing: room.localParticipant.isScreenShareEnabled });
+      this.syncPm();
     };
     [RoomEvent.ParticipantConnected, RoomEvent.ParticipantDisconnected, RoomEvent.TrackSubscribed,
       RoomEvent.TrackUnsubscribed, RoomEvent.TrackPublished, RoomEvent.TrackUnpublished, RoomEvent.TrackMuted,
@@ -188,7 +218,9 @@ class MeetingStore {
         if (!p || p === room.localParticipant) void this.syncLocalMediaState();
       }));
 
+    on(RoomEvent.ParticipantAttributesChanged, () => this.syncPm());
     on(RoomEvent.ParticipantConnected, (p: Participant) => {
+      if (p.identity === PM_IDENTITY) return;
       chime('join');
       toast(`${displayName(p)} joined`);
       // Someone arriving after a pin was set would otherwise see no spotlight.
@@ -198,6 +230,8 @@ class MeetingStore {
       setTimeout(() => this.catchUp(p.identity), 600);
     });
     on(RoomEvent.ParticipantDisconnected, (p: Participant) => {
+      // The PM leaving mid check-in: hand mics back.
+      if (p.identity === PM_IDENTITY) { if (this.snap.pm) this.pmFinish(); return; }
       chime('leave');
       const handsUp = new Map(this.snap.handsUp); handsUp.delete(p.identity);
       const statuses = new Map(this.snap.statuses); statuses.delete(p.identity);
@@ -213,7 +247,8 @@ class MeetingStore {
       toast(`${displayName(p)} left`);
     });
     on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
-      this.set({ speaking: new Set(speakers.map(s => s.identity)) });
+      const speaking = new Set(speakers.map(s => s.identity));
+      this.set({ speaking });
     });
     on(RoomEvent.DataReceived, (payload: Uint8Array, p?: Participant) => {
       try { this.handleData(JSON.parse(new TextDecoder().decode(payload)), p); } catch { /* not ours */ }
@@ -335,6 +370,8 @@ class MeetingStore {
 
   private handleData(d: DataMsg, p?: Participant) {
     const who = p ? displayName(p) : 'Someone';
+    // Only the PM speaks for the PM; nobody else can pause anyone.
+    if (d.t === 'pm') { if (p?.identity === PM_IDENTITY) this.handlePm(d); return; }
     if (d.t === 'chat') this.addChat(d.name || who, d.text, false);
     else if (d.t === 'reaction') this.floatEmoji(d.emoji, d.name || who, p?.identity || who);
     else if (d.t === 'pin') this.set({ pinned: d.identity || '' });
@@ -356,7 +393,8 @@ class MeetingStore {
 
   private addChat(name: string, text: string, mine: boolean, pollId?: string) {
     const chat = [...this.snap.chat, { id: ++this.seq, name, text, ts: clock(), mine, pollId }];
-    this.set({ chat, unread: this.snap.panel === 'chat' ? 0 : this.snap.unread + 1 });
+    this.set({ chat, unread: this.snap.panel === 'chat' || mine ? this.snap.unread : this.snap.unread + 1 });
+    if (!mine) messageSound();
   }
 
   private floatEmoji(emoji: string, name: string, from: string) {
@@ -621,8 +659,104 @@ class MeetingStore {
     this.publish({ t: 'chat', text: t, name });
   };
 
+  /** Dev-only hooks for the stand-in meeting in src/dev/preview.ts; null in builds. */
+  readonly dev = import.meta.env.DEV ? {
+    set: (patch: Partial<MeetingSnapshot>) => this.set(patch),
+    incomingChat: (name: string, text: string) => this.addChat(name, text, false),
+    join: (p: Participant) => this.set({ participants: [...this.snap.participants, p] }),
+    speaking: (ids: string[]) => this.set({ speaking: new Set(ids) }),
+    leave: (identity: string) => this.set({ participants: this.snap.participants.filter(p => p.identity !== identity) }),
+    /** A data message as if `identity` had sent it. */
+    receive: (d: DataMsg, identity: string) => this.handleData(d, { identity, name: identity } as Participant),
+  } : null;
+
   openPanel = (panel: Panel) => this.set({ panel, unread: panel === 'chat' ? 0 : this.snap.unread });
   closePanel = () => this.set({ panel: null });
+  /** The dock buttons open their panel, or close it when it's already showing. */
+  togglePanel = (panel: Panel) => { if (this.snap.panel === panel) this.closePanel(); else this.openPanel(panel); };
+
+  // ---------- the meeting PM ----------
+  /**
+   * Host: switch latecomer check-in on or off (or change its times). Applied at
+   * once, saved on the meeting, rolled back if the API refuses, and the PM is
+   * told to read the new settings.
+   */
+  setPm = async (settings: PmSettings) => {
+    const before = this.snap.pmSettings;
+    this.set({ pmSettings: settings });
+    if (this.room) {
+      try { await api.updateSettings(this.snap.meetingId, pmToWire(settings)); }
+      catch (e) {
+        this.set({ pmSettings: before });
+        toast(`Could not change check-in: ${(e as Error).message}`, 4000);
+        return false;
+      }
+      this.publish({ t: 'pm', op: 'settings' }, [PM_IDENTITY]);
+    }
+    return true;
+  };
+
+  /** The PM's tile follows its attributes: check-in on/off and the cutoff. */
+  private syncPm() {
+    const pm = this.room?.remoteParticipants.get(PM_IDENTITY);
+    const lateAfter = pm?.attributes?.late_after ? Date.parse(pm.attributes.late_after) : NaN;
+    const next = {
+      pmHere: !!pm,
+      pmCheckIn: pm?.attributes?.check_in === 'on',
+      pmLateAfter: Number.isFinite(lateAfter) ? lateAfter : null,
+    };
+    const cur = this.snap;
+    if (cur.pmHere !== next.pmHere || cur.pmCheckIn !== next.pmCheckIn || cur.pmLateAfter !== next.pmLateAfter) this.set(next);
+  }
+
+  private handlePm(m: PmMsg) {
+    const me = this.room?.localParticipant.identity || 'me';
+    if (m.op === 'start') {
+      this.set({ pm: { phase: 'asking', who: m.who, name: m.name, caption: '' } });
+      if (m.who !== me) void this.pmPauseMe();
+      window.clearTimeout(this.pmFailsafe);
+      // Never leave anyone muted if the end message is lost.
+      this.pmFailsafe = window.setTimeout(() => this.pmFinish(), 120_000);
+    } else if (m.op === 'phase') {
+      const pm = this.snap.pm;
+      if (pm) this.set({ pm: { ...pm, phase: m.phase, caption: m.caption ?? pm.caption } });
+    } else if (m.op === 'end') {
+      this.pmFinish(m.speaker);
+    }
+  }
+
+  private async pmPauseMe() {
+    if (!this.snap.micOn) return;
+    this.set({ pmPausedMe: true });
+    await this.setMic(false);
+  }
+
+  private pmFinish(speaker?: string) {
+    window.clearTimeout(this.pmFailsafe);
+    const me = this.room?.localParticipant.identity || 'me';
+    if (this.snap.pmPausedMe) {
+      this.set({ pmPausedMe: false });
+      void this.setMic(true);
+    }
+    if (speaker === me && this.snap.pm) toast('Over to you, please continue', 3500);
+    const pm = this.snap.pm;
+    if (!pm) return;
+    this.set({ pm: { ...pm, phase: 'done' } });
+    setTimeout(() => { if (this.snap.pm?.phase === 'done') this.set({ pm: null }); }, 1500);
+  }
+
+  // The mic stays captured while muted, so the PM can hand it back without
+  // the person having to tap anything.
+  private async setMic(on: boolean) {
+    const room = this.room;
+    if (room) {
+      this.micBusy = true;
+      try { await room.localParticipant.setMicrophoneEnabled(on); }
+      catch (e) { console.warn('PM mic change failed', e); if (on) toast('Tap the mic to unmute', 3500); return; }
+      finally { this.micBusy = false; }
+    }
+    this.set({ micOn: on, participants: room ? this.parts() : this.snap.participants });
+  }
 
   // ---------- host moderation ----------
   // Pinning is a shared spotlight: the host's choice is broadcast so every
@@ -638,7 +772,7 @@ class MeetingStore {
   // server-side; a client that ignores the request is still muted or removed.
   moderate = async (identity: string, action: 'mute' | 'stop_video' | 'remove', label: string) => {
     try {
-      await api.moderate(this.snap.roomId, identity, action);
+      await api.moderate(this.snap.meetingId, identity, action);
       toast(label);
     } catch (e) {
       toast(`Could not ${action.replace('_', ' ')}: ${(e as Error).message}`, 4000);
@@ -650,7 +784,7 @@ class MeetingStore {
 
   end = async () => {
     try {
-      await api.end(this.snap.livestreamUuid);
+      await api.end(this.snap.meetingId);
       forgetHostMeeting();
       toast('Meeting ended for everyone');
       void this.room?.disconnect();
@@ -673,6 +807,7 @@ class MeetingStore {
     });
     room.removeAllListeners();
     document.removeEventListener('visibilitychange', this.onVisibility);
+    window.clearTimeout(this.pmFailsafe);
     releaseAllMediaElements();
     this.room = null;
     this.knownShares.clear();

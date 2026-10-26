@@ -150,6 +150,21 @@ export function talkingDrum() {
 }
 
 /** Camera shutter for the group photo. */
+// A soft two-note "bloop" for an incoming chat message, kept well under the
+// join chime so it never talks over the meeting. Bursts collapse into one.
+let lastMessageSound = 0;
+export function messageSound() {
+  const now = Date.now();
+  if (now - lastMessageSound < 1500) return;
+  lastMessageSound = now;
+  try {
+    const ac = ctx();
+    const master = ac.createGain(); master.gain.value = 0.05; master.connect(ac.destination);
+    tone(ac, master, { freq: 784, dur: 0.16, attack: 0.008 });
+    tone(ac, master, { freq: 1175, at: 0.075, dur: 0.22, attack: 0.008, peak: 0.8 });
+  } catch { /* audio unavailable */ }
+}
+
 export function shutter() {
   try {
     const ac = ctx(), o = reactionMaster(ac);

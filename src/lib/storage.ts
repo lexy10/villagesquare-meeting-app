@@ -17,10 +17,14 @@ export const saveGuestName = (n: string) => write(NAME_KEY, n);
 // disconnects this client — the room stays live until the host ends it — so
 // remember it and offer a host-powered rejoin. Only identifiers are stored;
 // the bearer token never touches disk.
-export interface HostMeeting { uuid: string; roomId: string; title?: string }
+export interface HostMeeting { uuid: string; code: string; title?: string }
 const HOST_MEETING_KEY = 'vsm_host_meeting';
 export const rememberHostMeeting = (m: HostMeeting) => write(HOST_MEETING_KEY, JSON.stringify(m));
 export const forgetHostMeeting = () => remove(HOST_MEETING_KEY);
 export function recallHostMeeting(): HostMeeting | null {
-  try { return JSON.parse(read(HOST_MEETING_KEY) || 'null'); } catch { return null; }
+  try {
+    const m = JSON.parse(read(HOST_MEETING_KEY) || 'null');
+    // Saved before meetings had share codes: the livestream era can't be rejoined.
+    return m?.uuid && m.code ? m : null;
+  } catch { return null; }
 }

@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { canShareScreen } from '../../lib/devices';
 import { meeting, useMeeting } from '../../meeting/store';
 import { Icon } from '../Brand';
@@ -6,18 +7,31 @@ interface Props {
   reactOpen: boolean;
   onToggleReact: () => void;
   onLeave: () => void;
+  reactBtnRef: RefObject<HTMLButtonElement>;
+  leaveBtnRef: RefObject<HTMLButtonElement>;
 }
 
-export default function Dock({ reactOpen, onToggleReact, onLeave }: Props) {
+export default function Dock({ reactOpen, onToggleReact, onLeave, reactBtnRef, leaveBtnRef }: Props) {
   const s = useMeeting();
   const shareOk = canShareScreen();
   const btn = (base: string, flag: boolean, mod: string) => (flag ? `${base} ${mod}` : base);
 
   const nudge = s.mutedNudge && !s.micOn;
+  const me = s.room?.localParticipant.identity || 'me';
+  const askedMe = !!s.pm && s.pm.who === me && (s.pm.phase === 'asking' || s.pm.phase === 'listening');
 
   return (
     <div className="mt-dock">
-      {nudge && (
+      {askedMe ? (
+        <div className="muted-nudge pm-prompt" role="status">
+          <Icon name="smart_toy" /><span>{s.micOn ? 'The PM is asking you. Go ahead.' : 'The PM is asking why you joined late.'}</span>
+          {!s.micOn && <button onClick={() => void meeting.toggleMic()}>Unmute to answer</button>}
+        </div>
+      ) : s.pmPausedMe ? (
+        <div className="muted-nudge pm-prompt" role="status">
+          <Icon name="pause_circle" /><span>Paused while {s.pm?.name || 'a latecomer'} checks in</span>
+        </div>
+      ) : nudge && (
         <div className="muted-nudge" role="status">
           <Icon name="mic_off" /><span>You’re muted</span>
           <button onClick={() => { meeting.dismissNudge(); void meeting.toggleMic(); }}>Unmute</button>
@@ -36,16 +50,16 @@ export default function Dock({ reactOpen, onToggleReact, onLeave }: Props) {
         <Icon name={s.sharing ? 'cancel_presentation' : 'present_to_all'} />
       </button>
       <button className={btn('dbtn', s.handRaised, 'accent')} onClick={meeting.toggleHand} title="Raise hand"><Icon name="front_hand" /></button>
-      <button className={btn('dbtn', reactOpen, 'accent')} onClick={onToggleReact} title="React"><Icon name="mood" /></button>
+      <button ref={reactBtnRef} className={btn('dbtn', reactOpen, 'accent')} onClick={onToggleReact} title="React"><Icon name="mood" /></button>
       <div className="dock-sep"></div>
-      <button className={btn('dbtn rel', s.panel === 'people', 'accent')} onClick={() => meeting.openPanel('people')} title="People">
+      <button className={btn('dbtn rel', s.panel === 'people', 'accent')} onClick={() => meeting.togglePanel('people')} title="People">
         <Icon name="group" /><span className="cnt">{s.participants.length}</span>
       </button>
-      <button className={btn('dbtn rel', s.panel === 'chat', 'accent')} onClick={() => meeting.openPanel('chat')} title="Chat">
+      <button className={btn('dbtn rel', s.panel === 'chat', 'accent')} onClick={() => meeting.togglePanel('chat')} title="Chat">
         <Icon name="chat" />{s.unread > 0 && <span className="cnt red">{s.unread}</span>}
       </button>
       <div className="dock-sep"></div>
-      <button className="dbtn leave" onClick={e => { e.stopPropagation(); onLeave(); }} title="Leave"><Icon name="call_end" /></button>
+      <button ref={leaveBtnRef} className="dbtn leave" onClick={onLeave} title="Leave"><Icon name="call_end" /></button>
     </div>
   );
 }

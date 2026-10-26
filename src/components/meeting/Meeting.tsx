@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { toast } from '../../app/toast';
+import { useDismiss } from '../../hooks/useDismiss';
 import { captureGrid, downloadBlob, photoFileName } from '../../lib/groupPhoto';
 import { shutter } from '../../lib/sounds';
+import { clockLabel, defaultPmSettings, lateCutoff } from '../../meeting/pm';
 import { meeting, useMeeting } from '../../meeting/store';
 import { Icon, Logo, ThemeButton } from '../Brand';
 import Confetti from './Confetti';
@@ -19,30 +21,25 @@ export default function Meeting() {
   const [snapping, setSnapping] = useState(false);
   const tileMenuRef = useRef<HTMLDivElement>(null);
   const leaveMenuRef = useRef<HTMLDivElement>(null);
+  const reactBarRef = useRef<HTMLDivElement>(null);
+  const reactBtnRef = useRef<HTMLButtonElement>(null);
+  const leaveBtnRef = useRef<HTMLButtonElement>(null);
 
-  // Click anywhere else closes the open menu.
-  useEffect(() => {
-    if (!tileMenu && !leaveOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      const t = e.target as Element;
-      if (tileMenu && !tileMenuRef.current?.contains(t) && !t.closest('.tmore')) setTileMenu(null);
-      if (leaveOpen && !leaveMenuRef.current?.contains(t) && !t.closest('.dbtn.leave')) setLeaveOpen(false);
-    };
-    document.addEventListener('click', onDoc);
-    return () => document.removeEventListener('click', onDoc);
-  }, [tileMenu, leaveOpen]);
+  useDismiss(reactOpen, () => setReactOpen(false), () => [reactBarRef.current, reactBtnRef.current]);
+  useDismiss(leaveOpen, () => setLeaveOpen(false), () => [leaveMenuRef.current, leaveBtnRef.current]);
+  useDismiss(!!tileMenu, () => setTileMenu(null), () => [tileMenuRef.current, tileMenu?.anchor]);
 
   const openTileMenu = useCallback((identity: string, name: string, isLocal: boolean, anchor: HTMLElement) => {
     setTileMenu(cur => {
       if (cur?.identity === identity) return null; // same ⋮ again toggles it shut
       // Anchor under the button, then nudge back inside the viewport.
       const r = anchor.getBoundingClientRect();
-      return { identity, name, isLocal, top: r.bottom + 6, left: Math.max(8, Math.min(r.right - 220, window.innerWidth - 232)) };
+      return { identity, name, isLocal, anchor, top: r.bottom + 6, left: Math.max(8, Math.min(r.right - 220, window.innerWidth - 232)) };
     });
   }, []);
 
   const onLeave = () => {
-    if (s.role === 'host' && s.livestreamUuid) setLeaveOpen(v => !v);
+    if (s.role === 'host' && s.meetingId) setLeaveOpen(v => !v);
     else meeting.leave();
   };
 
@@ -65,8 +62,16 @@ export default function Meeting() {
     }
   };
 
+  const togglePm = async () => {
+    const cur = s.pmSettings || defaultPmSettings();
+    const next = { ...cur, enabled: !s.pmSettings?.enabled };
+    if (await meeting.setPm(next)) {
+      toast(next.enabled ? `Latecomer check-in on: anyone joining after ${clockLabel(lateCutoff(next))} is asked why` : 'Latecomer check-in off');
+    }
+  };
+
   const copyLink = () => {
-    navigator.clipboard?.writeText(s.shareUrl).then(() => toast('Invite link copied')).catch(() => toast(`Code: ${s.roomId}`));
+    navigator.clipboard?.writeText(s.shareUrl).then(() => toast('Invite link copied')).catch(() => toast(`Code: ${s.code}`));
   };
 
   return (
@@ -76,11 +81,18 @@ export default function Meeting() {
         <div className="title">{s.title || 'Meeting'}</div>
         <span className="mt-live"><span className="d"></span> Live</span>
         <div className="sp"></div>
+        {s.role === 'host' && s.pmAvailable && (
+          <button className={s.pmSettings?.enabled ? 'pm-chip on' : 'pm-chip'} onClick={() => void togglePm()}
+            title={s.pmSettings?.enabled ? 'Latecomer check-in is on. Click to turn it off.' : 'Turn on latecomer check-in'}>
+            <Icon name="smart_toy" />
+            <span>{s.pmSettings?.enabled ? `Late after ${clockLabel(lateCutoff(s.pmSettings))}` : 'PM off'}</span>
+          </button>
+        )}
         <button className="mt-topbtn" onClick={() => void takePhoto()} disabled={snapping} title="Take a group photo" aria-label="Take a group photo">
           <Icon name="photo_camera" />
         </button>
         <ThemeButton />
-        <div className="codechip"><Icon name="tag" /><span id="mtCode">{s.roomId || '—'}</span>
+        <div className="codechip"><Icon name="tag" /><span id="mtCode">{s.code || '—'}</span>
           <button onClick={copyLink} title="Copy invite link"><Icon name="content_copy" /></button>
         </div>
       </div>
@@ -94,10 +106,10 @@ export default function Meeting() {
 
       <Confetti />
 
-      <ReactionBar open={reactOpen} />
+      <ReactionBar ref={reactBarRef} open={reactOpen} />
       <TileMenu ref={tileMenuRef} target={tileMenu} onClose={() => setTileMenu(null)} />
       <LeaveMenu ref={leaveMenuRef} open={leaveOpen} onClose={() => setLeaveOpen(false)} />
-      <Dock reactOpen={reactOpen} onToggleReact={() => setReactOpen(v => !v)} onLeave={onLeave} />
+      <Dock reactOpen={reactOpen} onToggleReact={() => setReactOpen(v => !v)} onLeave={onLeave} reactBtnRef={reactBtnRef} leaveBtnRef={leaveBtnRef} />
     </div>
   );
 }

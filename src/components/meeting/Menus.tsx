@@ -3,7 +3,7 @@ import { Track } from 'livekit-client';
 import { meeting, STATUSES, useMeeting, type StatusId } from '../../meeting/store';
 import { Icon } from '../Brand';
 
-export interface TileMenuTarget { identity: string; name: string; isLocal: boolean; top: number; left: number }
+export interface TileMenuTarget { identity: string; name: string; isLocal: boolean; top: number; left: number; anchor: HTMLElement }
 
 interface TileMenuProps { target: TileMenuTarget | null; onClose: () => void }
 
@@ -63,11 +63,11 @@ export const LeaveMenu = forwardRef<HTMLDivElement, LeaveMenuProps>(function Lea
 
 const EMOJIS = ['👍', '❤️', '🎉', '👏', '😂', '😮', '🔥', '🙌'];
 
-export function ReactionBar({ open }: { open: boolean }) {
+export const ReactionBar = forwardRef<HTMLDivElement, { open: boolean }>(function ReactionBar({ open }, ref) {
   const s = useMeeting();
   const mine = s.room ? s.statuses.get(s.room.localParticipant.identity) : undefined;
   return (
-    <div id="reactBar" className={open ? 'open' : undefined}>
+    <div id="reactBar" className={open ? 'open' : undefined} ref={ref}>
       {EMOJIS.map(e => <button key={e} onClick={() => meeting.react(e)}>{e}</button>)}
       <div className="rb-status">
         {(Object.keys(STATUSES) as StatusId[]).map(id => (
@@ -79,7 +79,7 @@ export function ReactionBar({ open }: { open: boolean }) {
       </div>
     </div>
   );
-}
+});
 
 export function FloatingReactions() {
   const s = useMeeting();

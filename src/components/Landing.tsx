@@ -12,12 +12,12 @@ function useRejoinCard() {
   const [label, setLabel] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     const m = recallHostMeeting();
-    if (!m?.uuid || !m.roomId) { setLabel(null); return; }
+    if (!m) { setLabel(null); return; }
     try {
-      const d = await api.meetingStatus(m.roomId);
+      const d = await api.meetingStatus(m.code);
       if (d && d.live === false) { forgetHostMeeting(); setLabel(null); return; }
     } catch { /* status unavailable — still offer it; the rejoin call decides */ }
-    setLabel(m.title ? `${m.title} · ${m.roomId}` : m.roomId);
+    setLabel(m.title ? `${m.title} · ${m.code}` : m.code);
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
   return { label, refresh };

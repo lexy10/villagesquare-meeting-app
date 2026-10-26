@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { Track } from 'livekit-client';
 import { useApp } from '../../app/AppContext';
 import { GAP_DESKTOP, GAP_PHONE, isPhonePortrait, scrollLayout, solveLayout, targetAspect, type Box } from '../../lib/layout';
 import { pruneMediaElements } from '../../lib/mediaElements';
 import { cameraPub, micLive, micTrack, renderables, screenPub } from '../../lib/participants';
-import { handPosition, useMeeting } from '../../meeting/store';
+import { PM_IDENTITY } from '../../meeting/pm';
+import { handPosition, PM_TRACK, useMeeting } from '../../meeting/store';
+import PmTile from './PmTile';
 import Tile, { type Aspect } from './Tile';
 
 interface Props {
@@ -28,25 +30,33 @@ export default function VideoGrid({ onMore }: Props) {
 
   // The best column count depends on the real container, so re-solve whenever
   // it changes size: window resize, rotation, or the side panel opening.
+  const measure = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const b = contentBox(wrap);
+    setBox(prev => (prev && prev.w === b.w && prev.h === b.h ? prev : b));
+  }, []);
   useLayoutEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const measure = () => {
-      const b = contentBox(wrap);
-      setBox(prev => (prev && prev.w === b.w && prev.h === b.h ? prev : b));
-    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(wrap);
     window.addEventListener('resize', measure);
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
-  }, []);
+  }, [measure]);
+  // Opening or closing a panel changes the width in the same commit; measure
+  // then too rather than relying on the observer alone.
+  useLayoutEffect(measure, [s.panel, measure]);
 
   const all = renderables(s.participants);
   const pinIdx = s.pinned ? all.findIndex(t => t.key === s.pinned) : -1;
   const hasPin = pinIdx >= 0;
   const specs = hasPin ? [all[pinIdx], ...all.filter((_, i) => i !== pinIdx)] : all;
-  const n = specs.length;
+  // The PM has a tile of its own while latecomer check-in is on (and always
+  // while it's mid check-in, should the host switch it off then).
+  const pmOn = s.pmHere && (s.pmCheckIn || !!s.pm);
+  const n = specs.length + (pmOn ? 1 : 0);
 
   const views = specs.map(spec => {
     const video = spec.screen ? screenPub(spec.p) : cameraPub(spec.p);
@@ -66,7 +76,7 @@ export default function VideoGrid({ onMore }: Props) {
   } else if (box) {
     const gap = isPhonePortrait() ? GAP_PHONE : GAP_DESKTOP;
     // With a single tile, match the sender's real shape so nothing is cropped.
-    const d = n === 1 ? views[0].video?.pub.dimensions : undefined;
+    const d = n === 1 ? views[0]?.video?.pub.dimensions : undefined;
     const ar = targetAspect(box, n, d?.width && d?.height ? d.width / d.height : null);
     // Landscape caps at 16:9 so desktop grids stay clean; portrait tolerates a
     // little wider so stacked rows fill the screen instead of leaving margins.
@@ -90,14 +100,25 @@ export default function VideoGrid({ onMore }: Props) {
   const scrollMode = !hasPin && !fit;
   const pinPortrait = hasPin && pinAspect?.key === s.pinned && pinAspect.a.h > pinAspect.a.w;
 
+  const columnFor = (cell: number) => {
+    if (!centred) return undefined;
+    const row = Math.floor(cell / cols), inRow = cell % cols;
+    const inThisRow = row === rows - 1 ? n - (rows - 1) * cols : cols;
+    return `${(cols - inThisRow) + 1 + 2 * inRow} / span 2`;
+  };
+
+  // Everyone plays the PM's voice from the PM participant's track.
+  const pmTrack: Track | null = pmOn
+    ? s.room?.remoteParticipants.get(PM_IDENTITY)?.getTrackPublicationByName(PM_TRACK)?.track || null
+    : null;
+  if (pmTrack) liveTracks.add(pmTrack);
+  const pmTile = pmOn && (
+    <PmTile key="vsm-pm" pm={s.pm} lateAfter={s.pmLateAfter} track={pmTrack} gridColumn={hasPin ? undefined : columnFor(0)} />
+  );
+
   const tiles = views.map(({ spec, video, audio }, i) => {
     const isPinned = hasPin && i === 0;
-    let gridColumn: string | undefined;
-    if (centred) {
-      const row = Math.floor(i / cols), inRow = i % cols;
-      const inThisRow = row === rows - 1 ? n - (rows - 1) * cols : cols;
-      gridColumn = `${(cols - inThisRow) + 1 + 2 * inRow} / span 2`;
-    }
+    const gridColumn = columnFor(i + (pmOn && !hasPin ? 1 : 0));
     return (
       <Tile
         key={spec.key}
@@ -131,9 +152,9 @@ export default function VideoGrid({ onMore }: Props) {
         {hasPin ? (
           <>
             {tiles[0]}
-            {tiles.length > 1 && <div className="filmstrip">{tiles.slice(1)}</div>}
+            {(tiles.length > 1 || pmTile) && <div className="filmstrip">{pmTile}{tiles.slice(1)}</div>}
           </>
-        ) : tiles}
+        ) : <>{pmTile}{tiles}</>}
       </div>
     </div>
   );

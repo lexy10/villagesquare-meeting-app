@@ -112,8 +112,23 @@ async function hostFetch<T = any>(path: string, opts: Omit<ApiOptions, 'token'> 
 
 const enc = encodeURIComponent;
 
-export interface MeetingStatus { live?: boolean; room_id?: string; title?: string }
-export interface MediaGrant { token?: string; livekit_url?: string; room_id?: string; uuid?: string }
+export interface MeetingStatus { live?: boolean; code?: string | null; title?: string | null }
+export interface MeetingSettingsWire { latecomer_check_in: boolean; starts_at: string | null; grace_min: number; time_zone?: string }
+/** Everything needed to enter a meeting (host or guest). */
+export interface MeetingSession {
+  uuid: string;
+  code: string;
+  title: string;
+  role: 'host' | 'guest';
+  identity: string;
+  name: string;
+  token: string;
+  livekit_url: string;
+  /** Host only. */
+  settings?: MeetingSettingsWire;
+  assistant_available?: boolean;
+}
+export interface Hosting { can_host: boolean; assistant_available: boolean; default_grace_min: number }
 
 export const api = {
   login: (emailOrUsername: string, password: string) =>
@@ -124,16 +139,22 @@ export const api = {
         audience: 'web', device: 'browser', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
     }),
-  meetingStatus: (room: string) =>
-    apiFetch<MeetingStatus>(`/livestreams/${enc(room)}/meeting-status`, { method: 'POST' }),
-  start: (form: FormData) =>
-    hostFetch<MediaGrant>('/livestreams/start', { method: 'POST', multipart: true, body: form }),
+  // Meetings. A guest holds a share code (or the old "vs-meeting" link); the
+  // host's actions use the meeting's uuid.
+  meetingStatus: (code: string) =>
+    apiFetch<MeetingStatus>(`/meetings/${enc(code)}/status`),
+  hosting: () =>
+    hostFetch<Hosting>('/meetings/hosting'),
+  start: (body: { title: string } & Partial<MeetingSettingsWire>) =>
+    hostFetch<MeetingSession>('/meetings', { method: 'POST', body }),
   hostJoin: (uuid: string) =>
-    hostFetch<MediaGrant>(`/livestreams/${enc(uuid)}/join`, { method: 'POST' }),
-  guestToken: (room: string, name: string) =>
-    apiFetch<MediaGrant>(`/livestreams/${enc(room)}/guest-token`, { method: 'POST', body: { name } }),
-  moderate: (roomId: string, identity: string, action: string) =>
-    hostFetch(`/livestreams/${enc(roomId)}/moderate`, { method: 'POST', body: { identity, action } }),
+    hostFetch<MeetingSession>(`/meetings/${enc(uuid)}/join`, { method: 'POST' }),
+  guestJoin: (code: string, name: string) =>
+    apiFetch<MeetingSession>(`/meetings/${enc(code)}/guest-token`, { method: 'POST', body: { name } }),
+  moderate: (uuid: string, identity: string, action: string) =>
+    hostFetch(`/meetings/${enc(uuid)}/moderate`, { method: 'POST', body: { identity, action } }),
+  updateSettings: (uuid: string, body: Partial<MeetingSettingsWire>) =>
+    hostFetch<MeetingSettingsWire>(`/meetings/${enc(uuid)}/settings`, { method: 'PATCH', body }),
   end: (uuid: string) =>
-    hostFetch(`/livestreams/${enc(uuid)}/end-livestream`),
+    hostFetch(`/meetings/${enc(uuid)}/end`, { method: 'POST' }),
 };
