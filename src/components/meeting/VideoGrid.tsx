@@ -55,7 +55,7 @@ export default function VideoGrid({ onMore }: Props) {
   const specs = hasPin ? [all[pinIdx], ...all.filter((_, i) => i !== pinIdx)] : all;
   // The PM has a tile of its own while latecomer check-in is on (and always
   // while it's mid check-in, should the host switch it off then).
-  const pmOn = s.pmHere && (s.pmCheckIn || !!s.pm);
+  const pmOn = s.pmHere && (s.pmCheckIn || s.pmLead || !!s.pm);
   const n = specs.length + (pmOn ? 1 : 0);
 
   const views = specs.map(spec => {
@@ -113,7 +113,8 @@ export default function VideoGrid({ onMore }: Props) {
     : null;
   if (pmTrack) liveTracks.add(pmTrack);
   const pmTile = pmOn && (
-    <PmTile key="vsm-pm" pm={s.pm} lateAfter={s.pmLateAfter} track={pmTrack} gridColumn={hasPin ? undefined : columnFor(0)} />
+    <PmTile key="vsm-pm" pm={s.pm} lateAfter={s.pmLateAfter} leading={s.pmLead} saying={s.pmSaying}
+      turnName={s.pmTurn ? (s.pmTurn.who === s.room?.localParticipant.identity ? 'You' : s.pmTurn.name) : null} track={pmTrack} gridColumn={hasPin ? undefined : columnFor(0)} />
   );
 
   const tiles = views.map(({ spec, video, audio }, i) => {

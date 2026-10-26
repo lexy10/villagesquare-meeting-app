@@ -70,6 +70,12 @@ export default function Meeting() {
     }
   };
 
+  const toggleLead = async () => {
+    const cur = s.pmSettings || { ...defaultPmSettings(), enabled: false };
+    const next = { ...cur, lead: !cur.lead };
+    if (await meeting.setPm(next)) toast(next.lead ? 'The PM is leading the meeting' : 'The PM has stopped leading');
+  };
+
   const copyLink = () => {
     navigator.clipboard?.writeText(s.shareUrl).then(() => toast('Invite link copied')).catch(() => toast(`Code: ${s.code}`));
   };
@@ -86,6 +92,13 @@ export default function Meeting() {
             title={s.pmSettings?.enabled ? 'Latecomer check-in is on. Click to turn it off.' : 'Turn on latecomer check-in'}>
             <Icon name="smart_toy" />
             <span>{s.pmSettings?.enabled ? `Late after ${clockLabel(lateCutoff(s.pmSettings))}` : 'PM off'}</span>
+          </button>
+        )}
+        {s.role === 'host' && s.leadAvailable && (
+          <button className={s.pmSettings?.lead ? 'pm-chip on' : 'pm-chip'} onClick={() => void toggleLead()}
+            title={s.pmSettings?.lead ? 'The PM is leading. Click to stop.' : 'Let the PM lead the meeting'}>
+            <Icon name="groups" />
+            <span>{s.pmSettings?.lead ? 'PM leading' : 'PM leads: off'}</span>
           </button>
         )}
         <button className="mt-topbtn" onClick={() => void takePhoto()} disabled={snapping} title="Take a group photo" aria-label="Take a group photo">

@@ -74,6 +74,12 @@ export interface MeetingSnapshot {
   /** Latecomer check-in is on, and from when people count as late (epoch ms). */
   pmCheckIn: boolean;
   pmLateAfter: number | null;
+  /** The PM is leading the meeting. */
+  pmLead: boolean;
+  /** What the PM is saying right now while leading (captions), or null. */
+  pmSaying: string | null;
+  /** Who the PM last handed the floor to. */
+  pmTurn: { who: string; name: string } | null;
   /** The PM's check-in in progress, as everyone sees it. */
   pm: PmView | null;
   /** The PM paused my mic and will hand it back. */
@@ -82,6 +88,8 @@ export interface MeetingSnapshot {
   pmSettings: PmSettings | null;
   /** The meeting PM is switched on platform-wide (admin setting). */
   pmAvailable: boolean;
+  /** Host: the PM can lead meetings right now (Claude credit left). */
+  leadAvailable: boolean;
 }
 
 export interface ConnectOptions {
@@ -98,6 +106,7 @@ export interface ConnectOptions {
   /** Host only: latecomer check-in, and whether the PM is available at all. */
   pm?: PmSettings;
   pmAvailable?: boolean;
+  leadAvailable?: boolean;
 }
 
 interface Handlers { onEnded: () => void }
@@ -131,8 +140,8 @@ function idleSnapshot(): MeetingSnapshot {
     meetingId: '', micOn: true, camOn: true, sharing: false, handRaised: false, pinned: '',
     handsUp: new Map(), statuses: new Map(), speaking: new Set(), chat: [], polls: {}, unread: 0, panel: null,
     reactions: [], confetti: 0, mutedNudge: false, canPlaybackAudio: true,
-    pmHere: false, pmCheckIn: false, pmLateAfter: null,
-    pm: null, pmPausedMe: false, pmSettings: null, pmAvailable: false,
+    pmHere: false, pmCheckIn: false, pmLateAfter: null, pmLead: false, pmSaying: null, pmTurn: null,
+    pm: null, pmPausedMe: false, pmSettings: null, pmAvailable: false, leadAvailable: false,
   };
 }
 
@@ -179,7 +188,7 @@ class MeetingStore {
     this.replace({
       ...idleSnapshot(), status: 'connecting', room, role: o.role, code: o.code, title: o.title || 'Meeting',
       shareUrl: shareUrlFor(o.code), meetingId: o.meetingId, micOn: o.micOn, camOn: o.camOn,
-      pmAvailable: !!o.pmAvailable,
+      pmAvailable: !!o.pmAvailable, leadAvailable: !!o.leadAvailable,
     });
     this.wire(room);
     try {
@@ -231,7 +240,11 @@ class MeetingStore {
     });
     on(RoomEvent.ParticipantDisconnected, (p: Participant) => {
       // The PM leaving mid check-in: hand mics back.
-      if (p.identity === PM_IDENTITY) { if (this.snap.pm) this.pmFinish(); return; }
+      if (p.identity === PM_IDENTITY) {
+        if (this.snap.pm) this.pmFinish();
+        this.set({ pmSaying: null });
+        return;
+      }
       chime('leave');
       const handsUp = new Map(this.snap.handsUp); handsUp.delete(p.identity);
       const statuses = new Map(this.snap.statuses); statuses.delete(p.identity);
@@ -704,9 +717,11 @@ class MeetingStore {
       pmHere: !!pm,
       pmCheckIn: pm?.attributes?.check_in === 'on',
       pmLateAfter: Number.isFinite(lateAfter) ? lateAfter : null,
+      pmLead: pm?.attributes?.lead === 'on',
     };
     const cur = this.snap;
-    if (cur.pmHere !== next.pmHere || cur.pmCheckIn !== next.pmCheckIn || cur.pmLateAfter !== next.pmLateAfter) this.set(next);
+    if (cur.pmHere !== next.pmHere || cur.pmCheckIn !== next.pmCheckIn || cur.pmLateAfter !== next.pmLateAfter
+      || cur.pmLead !== next.pmLead) this.set(next);
   }
 
   private handlePm(m: PmMsg) {
@@ -722,6 +737,13 @@ class MeetingStore {
       if (pm) this.set({ pm: { ...pm, phase: m.phase, caption: m.caption ?? pm.caption } });
     } else if (m.op === 'end') {
       this.pmFinish(m.speaker);
+    } else if (m.op === 'say') {
+      this.set({ pmSaying: m.caption || '' });
+    } else if (m.op === 'quiet') {
+      this.set({ pmSaying: null });
+    } else if (m.op === 'turn') {
+      this.set({ pmTurn: { who: m.who, name: m.name } });
+      if (m.who === me && this.snap.micOn) toast('The PM is asking for your update', 3500);
     }
   }
 

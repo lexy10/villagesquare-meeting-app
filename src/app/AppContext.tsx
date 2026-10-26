@@ -123,6 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         token: d.token, livekitUrl: d.livekit_url, title: d.title || m.title || 'Meeting', seed, role: 'host',
         code: d.code || m.code, meetingId: d.uuid, micOn, camOn,
         pm: d.settings ? pmFromWire(d.settings) : undefined, pmAvailable: !!d.assistant_available,
+        leadAvailable: !!d.lead_available,
       });
       seed = null; // ownership transferred to LiveKit
       setScreen('meeting');

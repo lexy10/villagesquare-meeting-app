@@ -4,13 +4,21 @@
 // Someone joining after the start time + grace is checked in: at the next pause
 // the PM cuts in (everyone else's open mic is paused), asks why they were late,
 // listens until they stop talking, replies briefly, and hands back to whoever
-// spoke last. Every app here only shows the PM's tile and follows its messages.
+// spoke last. While the host's Claude credit lasts the PM can also lead the
+// meeting: a round of updates, answering when spoken to, keeping time, notes.
+// Every app here only shows the PM's tile and follows its messages.
 
 export interface PmSettings {
+  /** Latecomer check-in. */
   enabled: boolean;
   /** Epoch ms of the meeting's start time. */
   startAt: number;
   graceMin: number;
+  /** The PM leads the meeting. */
+  lead: boolean;
+  minutesPerPerson: number;
+  /** Topics for the PM to cover, one per line. */
+  agenda: string;
 }
 
 export type PmPhase = 'asking' | 'listening' | 'thinking' | 'replying' | 'done';
@@ -31,6 +39,10 @@ export type PmMsg =
   | { t: 'pm'; op: 'start'; who: string; name: string }
   | { t: 'pm'; op: 'phase'; phase: PmPhase; caption?: string }
   | { t: 'pm'; op: 'end'; speaker?: string }
+  // Leading: a sentence the PM is saying, the end of what it said, and who it handed the floor to.
+  | { t: 'pm'; op: 'say'; caption?: string }
+  | { t: 'pm'; op: 'quiet' }
+  | { t: 'pm'; op: 'turn'; who: string; name: string }
   // Host → PM: check-in settings changed, read them again.
   | { t: 'pm'; op: 'settings' };
 
@@ -38,16 +50,23 @@ export type PmMsg =
 export function defaultPmSettings(now = Date.now()): PmSettings {
   const d = new Date(now);
   d.setMinutes(d.getMinutes() - (d.getMinutes() % 5), 0, 0);
-  return { enabled: true, startAt: d.getTime(), graceMin: 5 };
+  return { enabled: true, startAt: d.getTime(), graceMin: 5, lead: false, minutesPerPerson: 2, agenda: '' };
 }
 
 /** The meeting's settings as the API holds them ↔ the PM's own shape. */
-export function pmFromWire(w: { latecomer_check_in: boolean; starts_at: string | null; grace_min: number }, fallbackStart = Date.now()): PmSettings {
-  return { enabled: w.latecomer_check_in, startAt: w.starts_at ? Date.parse(w.starts_at) : fallbackStart, graceMin: w.grace_min };
+export function pmFromWire(w: {
+  latecomer_check_in: boolean; starts_at: string | null; grace_min: number;
+  pm_lead?: boolean; minutes_per_person?: number; agenda?: string | null;
+}, fallbackStart = Date.now()): PmSettings {
+  return {
+    enabled: w.latecomer_check_in, startAt: w.starts_at ? Date.parse(w.starts_at) : fallbackStart, graceMin: w.grace_min,
+    lead: !!w.pm_lead, minutesPerPerson: w.minutes_per_person || 2, agenda: w.agenda || '',
+  };
 }
 export function pmToWire(s: PmSettings) {
   return {
     latecomer_check_in: s.enabled, starts_at: new Date(s.startAt).toISOString(), grace_min: s.graceMin,
+    pm_lead: s.lead, minutes_per_person: s.minutesPerPerson, agenda: s.agenda,
     // The PM on the server tells the time as the host's clock would.
     time_zone: localTimeZone(),
   };

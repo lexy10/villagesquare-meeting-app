@@ -113,7 +113,10 @@ async function hostFetch<T = any>(path: string, opts: Omit<ApiOptions, 'token'> 
 const enc = encodeURIComponent;
 
 export interface MeetingStatus { live?: boolean; code?: string | null; title?: string | null }
-export interface MeetingSettingsWire { latecomer_check_in: boolean; starts_at: string | null; grace_min: number; time_zone?: string }
+export interface MeetingSettingsWire {
+  latecomer_check_in: boolean; starts_at: string | null; grace_min: number; time_zone?: string;
+  pm_lead?: boolean; minutes_per_person?: number; agenda?: string | null;
+}
 /** Everything needed to enter a meeting (host or guest). */
 export interface MeetingSession {
   uuid: string;
@@ -127,8 +130,10 @@ export interface MeetingSession {
   /** Host only. */
   settings?: MeetingSettingsWire;
   assistant_available?: boolean;
+  /** The PM can lead meetings right now (Claude credit left). */
+  lead_available?: boolean;
 }
-export interface Hosting { can_host: boolean; assistant_available: boolean; default_grace_min: number }
+export interface Hosting { can_host: boolean; assistant_available: boolean; default_grace_min: number; lead_available?: boolean }
 
 export const api = {
   login: (emailOrUsername: string, password: string) =>

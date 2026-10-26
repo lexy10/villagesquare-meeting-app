@@ -3,6 +3,7 @@
 //   http://localhost:5174/?preview=9        any count
 //   http://localhost:5174/?preview=3&video  with fake camera feeds
 //   http://localhost:5174/?preview&pm       the PM's tile, and a check-in acted out (no voice)
+//   http://localhost:5174/?preview&lead     the PM leading a round of updates, acted out (no voice)
 //   http://localhost:5174/?preview=setup    the host's setup screen
 // In the console:
 //   vsmPreview.message('Ada', 'hi')                 an incoming chat
@@ -76,6 +77,27 @@ async function lateJoin(name = 'Chioma Nwankwo', answer = 'Sorry o, the traffic 
   return p.identity;
 }
 
+/** The PM opens, hears two updates and wraps up, as its messages would show it. */
+async function leadRound() {
+  const say = async (caption: string, ms = 2600) => {
+    fromPm({ t: 'pm', op: 'say', caption });
+    await sleep(ms);
+  };
+  await say('Good morning everyone, let us get started.');
+  await say('Adaeze, please go first. What did you work on?');
+  fromPm({ t: 'pm', op: 'turn', who: 'guest_p1', name: 'Adaeze Okafor' });
+  fromPm({ t: 'pm', op: 'quiet' });
+  meeting.dev?.speaking(['guest_p1']);
+  await sleep(4000);
+  meeting.dev?.speaking([]);
+  await say('Thanks, Adaeze. Is anything blocking the payout screen?');
+  fromPm({ t: 'pm', op: 'quiet' });
+  await sleep(3000);
+  await say('Good. You are next. Over to you.');
+  fromPm({ t: 'pm', op: 'turn', who: 'me', name: 'You' });
+  fromPm({ t: 'pm', op: 'quiet' });
+}
+
 export function startPreview() {
   const q = new URLSearchParams(location.search);
   const n = Math.max(1, Number(q.get('preview')) || 4), video = q.has('video');
@@ -95,7 +117,7 @@ export function startPreview() {
     // The meeting "started" 20 minutes ago with 5 minutes' grace.
     meeting.dev?.set({
       pmHere: true, pmCheckIn: true, pmLateAfter: startAt + 5 * 60_000,
-      pmSettings: { enabled: true, startAt, graceMin: 5 },
+      pmSettings: { enabled: true, startAt, graceMin: 5, lead: false, minutesPerPerson: 2, agenda: '' },
     });
     const late = ['Chioma Nwankwo', 'Bola Ade', 'Emeka Obi', 'Halima Sani', 'Femi Ojo'];
     const btn = document.createElement('button');
@@ -103,6 +125,18 @@ export function startPreview() {
     btn.textContent = '▶ Simulate a latecomer';
     btn.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:400;padding:10px 14px;border-radius:12px;background:#1b1f24;color:#fff;font:600 13px Inter,sans-serif;box-shadow:0 8px 20px rgba(0,0,0,.3)';
     btn.onclick = () => { void lateJoin(late.shift() || `Guest ${Date.now() % 1000}`); };
+    document.body.appendChild(btn);
+  }
+  if (q.has('lead') && !document.getElementById('vsm-preview-lead')) {
+    meeting.dev?.set({
+      pmHere: true, pmLead: true, leadAvailable: true, pmAvailable: true,
+      pmSettings: { enabled: false, startAt, graceMin: 5, lead: true, minutesPerPerson: 2, agenda: '' },
+    });
+    const btn = document.createElement('button');
+    btn.id = 'vsm-preview-lead';
+    btn.textContent = '▶ Simulate the PM leading';
+    btn.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:400;padding:10px 14px;border-radius:12px;background:#1b1f24;color:#fff;font:600 13px Inter,sans-serif;box-shadow:0 8px 20px rgba(0,0,0,.3)';
+    btn.onclick = () => { void leadRound(); };
     document.body.appendChild(btn);
   }
   (window as unknown as Record<string, unknown>).vsmPreview = {

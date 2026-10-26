@@ -19,6 +19,8 @@ export default function Dock({ reactOpen, onToggleReact, onLeave, reactBtnRef, l
   const nudge = s.mutedNudge && !s.micOn;
   const me = s.room?.localParticipant.identity || 'me';
   const askedMe = !!s.pm && s.pm.who === me && (s.pm.phase === 'asking' || s.pm.phase === 'listening');
+  // Leading: the PM has handed me the floor and my mic is still off.
+  const myTurn = !askedMe && s.pmLead && s.pmTurn?.who === me && !s.micOn;
 
   return (
     <div className="mt-dock">
@@ -26,6 +28,11 @@ export default function Dock({ reactOpen, onToggleReact, onLeave, reactBtnRef, l
         <div className="muted-nudge pm-prompt" role="status">
           <Icon name="smart_toy" /><span>{s.micOn ? 'The PM is asking you. Go ahead.' : 'The PM is asking why you joined late.'}</span>
           {!s.micOn && <button onClick={() => void meeting.toggleMic()}>Unmute to answer</button>}
+        </div>
+      ) : myTurn ? (
+        <div className="muted-nudge pm-prompt" role="status">
+          <Icon name="smart_toy" /><span>The PM is asking for your update.</span>
+          <button onClick={() => void meeting.toggleMic()}>Unmute to answer</button>
         </div>
       ) : s.pmPausedMe ? (
         <div className="muted-nudge pm-prompt" role="status">

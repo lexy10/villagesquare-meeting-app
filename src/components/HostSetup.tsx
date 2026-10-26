@@ -38,6 +38,7 @@ export default function HostSetup() {
   }, []);
   const canHost = hosting?.can_host !== false;
   const pmAvailable = !!hosting?.assistant_available;
+  const leadAvailable = pmAvailable && !!hosting?.lead_available;
 
   const start = async () => {
     if (busy || !canHost) return;
@@ -57,12 +58,16 @@ export default function HostSetup() {
           toast('Starting without camera/mic — you can enable them in the meeting.', 4000);
         }
       }
-      const d = await api.start({ title: t, ...pmToWire({ ...pm, enabled: pm.enabled && pmAvailable }) });
+      const d = await api.start({
+        title: t,
+        ...pmToWire({ ...pm, enabled: pm.enabled && pmAvailable, lead: pm.lead && leadAvailable }),
+      });
       if (!d.token || !d.livekit_url || !d.code) throw new Error('Meeting started but no media token was returned');
       rememberHostMeeting({ uuid: d.uuid, code: d.code, title: d.title });
       await meeting.connect({
         token: d.token, livekitUrl: d.livekit_url, title: d.title, seed, role: 'host', code: d.code, meetingId: d.uuid,
         micOn, camOn, pm: d.settings ? pmFromWire(d.settings) : undefined, pmAvailable: !!d.assistant_available,
+        leadAvailable: !!d.lead_available,
       });
       seed = null; // ownership transferred to LiveKit
       app.setShareOpen(true);
@@ -107,6 +112,26 @@ export default function HostSetup() {
                 <span className="pm-cut">Late after <b>{clockLabel(lateCutoff(pm))}</b></span>
               </div>
             )}
+            {leadAvailable && <>
+              <label className="pm-switch pm-lead">
+                <input type="checkbox" checked={pm.lead} onChange={e => setPm(p => ({ ...p, lead: e.target.checked }))} />
+                <span className="sw" aria-hidden="true"></span>
+                <span className="pm-st"><b>PM leads the meeting</b><span>Runs a round of updates, answers when spoken to, keeps time and writes the notes.</span></span>
+              </label>
+              {pm.lead && (
+                <div className="pm-times">
+                  {!pm.enabled && <label>Starts at<input type="time" value={startHHMM} onChange={e => setStart(e.target.value)} /></label>}
+                  <label>Per person
+                    <select value={pm.minutesPerPerson} onChange={e => setPm(p => ({ ...p, minutesPerPerson: Number(e.target.value) }))}>
+                      {[1, 2, 3, 5, 10].map(m => <option key={m} value={m}>{m} min</option>)}
+                    </select>
+                  </label>
+                  <textarea className="pm-agenda" rows={2} maxLength={1000} value={pm.agenda}
+                    placeholder="Topics to cover (optional), one per line"
+                    onChange={e => setPm(p => ({ ...p, agenda: e.target.value }))} />
+                </div>
+              )}
+            </>}
           </div>}
           {!canHost && <div className="err show">Your account can't host meetings yet. Ask an admin to turn hosting on for you.</div>}
           <div className={err ? 'err show' : 'err'}>{err}</div>
